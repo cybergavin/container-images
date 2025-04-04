@@ -38,6 +38,7 @@ jobs:
         with:
           fetch-depth: 0  # Fetch all history and tags
 
+
       # - name: Install Cosign
       #   run: |
       #     curl -Lo cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
@@ -74,6 +75,8 @@ jobs:
       - name: Generate Build Version Tag
         id: version
         run: |
+          echo "git tag -l "${{ env.VERSION_ID }}-*-*""
+          git tag -l "${{ env.VERSION_ID }}-*-*"
           VERSION_DATE=$(date +'%Y%m')
           BUILD_NUMBER=$(git tag -l "${{ env.VERSION_ID }}-*-*" | grep "$VERSION_DATE" | wc -l)
           BUILD_NUMBER=$(printf "%02d" $((BUILD_NUMBER + 1)))
