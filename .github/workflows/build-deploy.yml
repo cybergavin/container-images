@@ -20,7 +20,7 @@ jobs:
         - name: Discover Dockerfiles
           id: list-dockerfiles
           run: |
-            echo 'files=["baseOS/Dockerfile.alpine","baseOS/Dockerfile.amazon","baseOS/Dockerfile.wolfi"]' >> $GITHUB_ENV"
+            echo 'files=["baseOS/Dockerfile.alpine","baseOS/Dockerfile.amazon","baseOS/Dockerfile.wolfi"]' >> $GITHUB_ENV
 
   build-test-publish:
     runs-on: ubuntu-latest
