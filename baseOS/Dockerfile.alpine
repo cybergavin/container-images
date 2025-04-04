@@ -4,7 +4,8 @@ FROM alpine:${VERSION_ID}
 # Add metadata
 LABEL cg.image.maintainer="cybergavin" \
       cg.image.description="Validated baseOS image based on Alpine" \
-      cg.image.support="cybergavin@gmail.com"
+      cg.image.support="cybergavin@gmail.com" \
+      org.opencontainers.image.source="https://github.com/cybergavin/container-images"
 
 # Update packages, install necessary utilities, and clean up in a single layer
 # hadolint ignore=DL3041
