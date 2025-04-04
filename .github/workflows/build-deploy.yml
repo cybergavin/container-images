@@ -19,8 +19,8 @@ jobs:
 
         - name: Discover Dockerfiles
           id: list-dockerfiles
-          run: |
-            echo 'files=["baseOS/Dockerfile.alpine","baseOS/Dockerfile.amazon","baseOS/Dockerfile.wolfi"]' >> $GITHUB_ENV
+          run: echo "files=$(jq -R -s -c 'split("\n")[:-1]' <<< "$(ls baseOS/Dockerfile.*)")" >> $GITHUB_OUTPUT
+            
 
   build-test-publish:
     runs-on: ubuntu-latest
