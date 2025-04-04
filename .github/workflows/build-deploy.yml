@@ -88,7 +88,7 @@ jobs:
       
       - name: Build Secure Image
         run: |
-          docker build --no-cache -t ${{ env.image_name }}:${{ env.VERSION_TAG }} -f ${{ matrix.dockerfile }} .
+          docker build --no-cache -t ${{ env.image_name }}:${{ env.VERSION_TAG }} --build-arg VERSION_ID="${{ env.VERSION_ID }}" -f ${{ matrix.dockerfile }} .
       
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
