@@ -1,0 +1,15 @@
+FROM cgr.dev/chainguard/wolfi-base
+
+# Add metadata
+LABEL cg.image.maintainer="cybergavin" \
+      cg.image.description="Validated baseOS image based on Wolfi" \
+      cg.image.support="cybergavin@gmail.com"
+
+# Update packages, install necessary utilities, and clean up in a single layer
+# hadolint ignore=DL3041
+RUN apk update && \
+    apk upgrade && \
+    apk add --no-cache wget
+
+USER 65532:65532
+WORKDIR /app
