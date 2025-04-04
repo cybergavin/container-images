@@ -19,7 +19,9 @@ jobs:
 
         - name: Discover Dockerfiles
           id: list-dockerfiles
-          run: echo "files=$(jq -R -s -c 'split("\n")[:-1]' <<< "$(ls baseOS/Dockerfile.*)")" >> $GITHUB_ENV
+          run: |
+            echo "files=$(jq -R -s -c 'split("\n")[:-1]' <<< "$(ls baseOS/Dockerfile.*)")" >> $GITHUB_ENV
+            echo "Files: $files"
 
   build-test-publish:
     runs-on: ubuntu-latest
