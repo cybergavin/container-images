@@ -75,10 +75,8 @@ jobs:
       - name: Generate Build Version Tag
         id: version
         run: |
-          echo "git tag -l "${{ env.VERSION_ID }}-*-*""
-          git tag -l "${{ env.VERSION_ID }}-*-*"
           VERSION_DATE=$(date +'%Y%m')
-          BUILD_NUMBER=$(git tag -l "${{ env.VERSION_ID }}-*-*" | grep "$VERSION_DATE" | wc -l)
+          BUILD_NUMBER=$(skopeo list-tags "{{ env.image_name }}" | jq -r '.Tags[]' | grep -E '.+-b[0-9]+-202504$' | wc -l)
           BUILD_NUMBER=$(printf "%02d" $((BUILD_NUMBER + 1)))
           VERSION_TAG="${{ env.VERSION_ID }}-b${BUILD_NUMBER}-${VERSION_DATE}"
           echo "VERSION_TAG=${VERSION_TAG}" >> $GITHUB_ENV
