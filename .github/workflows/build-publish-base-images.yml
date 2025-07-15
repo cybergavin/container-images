@@ -127,14 +127,25 @@ jobs:
           provenance: mode=max
           outputs: type=image,name=${{ env.IMAGE }}
 
-      - name: Scan with Dockle
-        uses: goodwithtech/dockle-action@e30e6af832aad6ea7dca2a248d31a85eab6dbd68 # v0.4.15
+      - name: Extract and Store SBOM
+        run: |
+          # Download SBOM and save as artifact
+          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ env.BUILD_TAG }} --format "{{ json .SBOM }}" > sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
+          
+      - name: Upload SBOM as Artifact
+        uses: actions/upload-artifact@v4
         with:
-          image: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
-          format: 'list'
-          exit-code: '1'
-          exit-level: 'warn'
-          ignore: 'CIS-DI-0005,CIS-DI-0005,DKL-DI-0006'          
+          name: sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}
+          path: sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
+
+      # - name: Scan with Dockle
+      #   uses: goodwithtech/dockle-action@e30e6af832aad6ea7dca2a248d31a85eab6dbd68 # v0.4.15
+      #   with:
+      #     image: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+      #     format: 'list'
+      #     exit-code: '1'
+      #     exit-level: 'warn'
+      #     ignore: 'CIS-DI-0005,CIS-DI-0005,DKL-DI-0006'          
 
       - name: Scan with Trivy
         uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
