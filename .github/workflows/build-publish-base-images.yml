@@ -10,7 +10,7 @@ on:
 
 env:
   DEFAULT_REGISTRY: ghcr.io
-  IMAGE_NAMESPACE: ${{ github.repository }}
+  IMAGE_NAMESPACE: ${{ github.owner}}
 
 jobs:
   discover:
