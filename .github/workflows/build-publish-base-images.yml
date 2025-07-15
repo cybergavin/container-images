@@ -1,0 +1,124 @@
+name: Build and Publish Secure BaseOS Container Images
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - 'baseOS/**/Dockerfile'
+
+env:
+  DEFAULT_REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.list.outputs.files }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          files=$(find . -mindepth 2 -name Dockerfile | jq -R -s -c 'split("\n")[:-1]')
+          echo "files=$files" >> $GITHUB_OUTPUT
+
+  build-publish:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dockerfile: ${{ fromJson(needs.discover.outputs.files) }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write  # For provenance
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2  
+
+      - name: Set Variables
+        run: |
+          file="${{ matrix.dockerfile }}"
+          base=$(basename "$(dirname "$file")")
+          image="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${base}"
+          echo "BASE=$base" >> $GITHUB_ENV
+          echo "IMAGE=$image" >> $GITHUB_ENV
+
+      - name: Determine BaseOS Version
+        run: |
+          case "$BASE" in
+            amazonlinux) base_img="public.ecr.aws/amazonlinux/amazonlinux:minimal";;
+            almalinux)   base_img="almalinux:minimal";;
+            alpine)      base_img="alpine";;
+            wolfi)       base_img="cgr.dev/chainguard/wolfi-base";;
+            *) echo "Unknown: $BASE"; exit 1;;
+          esac
+          if [ "$BASE" == "wolfi" ]; then version_id="latest"; else
+            version_id=$(docker run --rm "$base_img" awk -F= '/VERSION_ID/ {gsub(/"/,"");print $2}' /etc/os-release)
+          fi
+          echo "VERSION_ID=$version_id" >> $GITHUB_ENV
+
+      - name: Compute Build Tag
+        run: |
+          DATE=$(date +'%Y%m')
+          count=$(skopeo list-tags "docker://${IMAGE}" | jq -r .Tags[] | grep -c "^${VERSION_ID}-b.*-${DATE}$")
+          num=$(printf "%02d" $((count + 1)))
+          echo "BUILD_TAG=${VERSION_ID}-b${num}-${DATE}" >> $GITHUB_ENV
+
+      - name: Login to Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ env.DEFAULT_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+
+      - name: Build & Push Image + SBOM & Provenance
+        id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        env:
+          DOCKER_BUILD_SUMMARY: true    # enables GitHub job summary
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+            ${{ env.IMAGE }}:${{ github.sha }}
+          build-args: |
+            VERSION_ID=${{ env.VERSION_ID }}
+          sbom: true
+          provenance: mode=max
+          outputs: type=image,name=${{ env.IMAGE }}
+
+      - name: Scan with Dockle
+        uses: goodwithtech/dockle-action@e30e6af832aad6ea7dca2a248d31a85eab6dbd68 # v0.4.15
+        with:
+          image: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+          format: 'list'
+          exit-code: '1'
+          exit-level: 'warn'
+          ignore: 'CIS-DI-0005,CIS-DI-0005,DKL-DI-0006'          
+
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          vuln-type: 'os,library'
+
+      - name: Sign Image with Cosign
+        run: |
+          cosign sign --yes ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
