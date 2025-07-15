@@ -109,8 +109,18 @@ jobs:
           verbose: true
           ignore: DL3018,DL3059
 
+      - name: Extract metadata
+        id: docker_meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ env.BUILD_TAG }}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
       - name: Build & Push Image + SBOM & Provenance
-        id: build
+        id: build-and-push
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         env:
           DOCKER_BUILD_SUMMARY: true    # enables GitHub job summary
@@ -118,11 +128,8 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
-            ${{ env.IMAGE }}:${{ github.sha }}
-          build-args: |
-            VERSION_ID=${{ env.VERSION_ID }}
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          build-args: VERSION_ID=${{ env.VERSION_ID }}
           sbom: true
           provenance: mode=max
           outputs: type=image,name=${{ env.IMAGE }}
@@ -157,6 +164,20 @@ jobs:
           severity: 'CRITICAL,HIGH'
           vuln-type: 'os,library'
 
-      - name: Sign Image with Cosign
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+
+      - name: Sign and verify the images with GitHub OIDC Token
+        env:
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+          TAGS: ${{ steps.docker_meta.outputs.tags }}
         run: |
-          cosign sign --yes ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          images=""
+          for tag in ${TAGS}; do
+            images+="${tag}@${DIGEST} "
+          done
+          cosign sign --yes ${images}
+          cosign verify ${images} \
+          --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+          --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+
