@@ -1,5 +1,4 @@
-ARG VERSION_ID
-FROM alpine:${VERSION_ID}
+FROM alpine
 
 # Add metadata
 LABEL cg.image.maintainer="cybergavin" \

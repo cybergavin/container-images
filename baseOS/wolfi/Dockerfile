@@ -1,5 +1,4 @@
-ARG VERSION_ID
-FROM cgr.dev/chainguard/wolfi-base:${VERSION_ID}
+FROM cgr.dev/chainguard/wolfi-base
 
 # Add metadata
 LABEL cg.image.maintainer="cybergavin" \

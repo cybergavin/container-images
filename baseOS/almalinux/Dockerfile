@@ -1,5 +1,4 @@
-ARG VERSION_ID
-FROM almalinux:${VERSION_ID}-minimal
+FROM almalinux:minimal
 
 # Add metadata
 LABEL cg.image.maintainer="cybergavin" \

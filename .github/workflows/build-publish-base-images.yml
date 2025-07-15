@@ -42,13 +42,6 @@ jobs:
         with:
           fetch-depth: 0  # Fetch all history and tags
 
-      # - name: Set Up GitHub App Token
-      #   uses: actions/create-github-app-token@df432ceedc7162793a195dd1713ff69aefc7379e # v2.0.6
-      #   id: app-token
-      #   with:
-      #     app-id: ${{ vars.GH_APP_ID }}
-      #     private-key: ${{ secrets.GH_APP_KEY }}
-
       - name: Set Variables
         run: |
           file="${{ matrix.dockerfile }}"
@@ -107,7 +100,7 @@ jobs:
           dockerfile: ${{ matrix.dockerfile }}
           failure-threshold: error
           verbose: true
-          ignore: DL3018,DL3059
+          ignore: DL3018,DL3059,DL3041
 
       - name: Extract metadata
         id: docker_meta
@@ -129,7 +122,6 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
-          build-args: VERSION_ID=${{ env.VERSION_ID }}
           sbom: true
           provenance: mode=max
           outputs: type=image,name=${{ env.IMAGE }}

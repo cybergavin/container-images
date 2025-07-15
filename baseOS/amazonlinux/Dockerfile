@@ -1,5 +1,4 @@
-ARG VERSION_ID
-FROM public.ecr.aws/amazonlinux/amazonlinux:${VERSION_ID}-minimal
+FROM public.ecr.aws/amazonlinux/amazonlinux:minimal
 
 # Add metadata
 LABEL cg.image.maintainer="cybergavin" \
