@@ -1,0 +1,197 @@
+name: CI - Build and Test BaseOS Images
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'  # Monthly security updates
+  workflow_dispatch:
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'baseOS/**/Dockerfile'
+
+env:
+  DEFAULT_REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.list.outputs.files }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          files=$(find . -mindepth 2 -name Dockerfile | jq -R -s -c 'split("\n")[:-1]')
+          echo "files=$files" >> $GITHUB_OUTPUT
+
+  build-test:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: ${{ fromJson(needs.discover.outputs.files) }}
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set Variables
+        run: |
+          file="${{ matrix.dockerfile }}"
+          base=$(basename "$(dirname "$file")")
+          image="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${base}"
+          echo "BASE=$base" >> $GITHUB_ENV
+          echo "IMAGE=$image" >> $GITHUB_ENV
+
+      - name: Determine BaseOS Version
+        run: |
+          case "$BASE" in
+            amazonlinux) base_img="public.ecr.aws/amazonlinux/amazonlinux:minimal";;
+            almalinux)   base_img="almalinux:minimal";;
+            alpine)      base_img="alpine";;
+            wolfi)       base_img="cgr.dev/chainguard/wolfi-base";;
+            *) echo "Unknown: $BASE"; exit 1;;
+          esac
+          if [ "$BASE" == "wolfi" ]; then version_id="latest"; else
+            version_id=$(docker run --rm "$base_img" awk -F= '/VERSION_ID/ {gsub(/"/,"");print $2}' /etc/os-release)
+          fi
+          echo "VERSION_ID=$version_id" >> $GITHUB_ENV
+
+      - name: Compute Build Tag
+        run: |
+          DATE=$(date +'%Y%m')
+          BRANCH_SLUG=$(echo "${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]')
+          echo "BUILD_TAG=${VERSION_ID}-${BRANCH_SLUG}-${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+          failure-threshold: error
+          verbose: true
+          ignore: DL3018,DL3059,DL3041
+
+      - name: Build Image (No Push)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+          build-args: VERSION_ID=${{ env.VERSION_ID }}
+          outputs: type=docker,dest=/tmp/${{ env.BASE }}-image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Load Image for Testing
+        run: docker load -i /tmp/${{ env.BASE }}-image.tar
+
+      - name: Test Image Functionality
+        run: |
+          echo "Testing basic functionality for ${{ env.BASE }}..."
+          
+          # Test container starts and basic commands work
+          docker run --rm ${{ env.IMAGE }}:${{ env.BUILD_TAG }} echo "Container startup test passed"
+          
+          # Test package manager
+          case "${{ env.BASE }}" in
+            amazonlinux|almalinux) docker run --rm ${{ env.IMAGE }}:${{ env.BUILD_TAG }} rpm --version ;;
+            alpine) docker run --rm ${{ env.IMAGE }}:${{ env.BUILD_TAG }} apk --version ;;
+            wolfi) docker run --rm ${{ env.IMAGE }}:${{ env.BUILD_TAG }} apk --version ;;
+          esac
+          
+          echo "✅ Functionality tests passed"
+
+      - name: Generate SBOM
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v $PWD:/src anchore/syft:latest \
+            ${{ env.IMAGE }}:${{ env.BUILD_TAG }} -o json > sbom-${{ env.BASE }}.json
+
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@v0.32.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+          format: json
+          output: trivy-${{ env.BASE }}.json
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          vuln-type: 'os,library'
+
+      - name: Upload Test Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ env.BASE }}
+          path: |
+            sbom-${{ env.BASE }}.json
+            trivy-${{ env.BASE }}.json
+            /tmp/${{ env.BASE }}-image.tar
+
+  create-pr:
+    needs: [discover, build-test]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Generate PR Body
+        run: |
+          echo "## 🔄 Automated BaseOS Update" > pr_body.md
+          echo "" >> pr_body.md
+          echo "This PR contains automated updates for BaseOS container images." >> pr_body.md
+          echo "" >> pr_body.md
+          echo "### 📊 Build Results" >> pr_body.md
+          
+          for artifact_dir in test-results-*; do
+            if [ -d "$artifact_dir" ]; then
+              base=$(echo "$artifact_dir" | sed 's/test-results-//')
+              echo "#### $base" >> pr_body.md
+              
+              # Check for vulnerabilities
+              if [ -f "$artifact_dir/trivy-$base.json" ]; then
+                critical=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL") | .VulnerabilityID' "$artifact_dir/trivy-$base.json" | wc -l)
+                high=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH") | .VulnerabilityID' "$artifact_dir/trivy-$base.json" | wc -l)
+                medium=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM") | .VulnerabilityID' "$artifact_dir/trivy-$base.json" | wc -l)
+                echo "- 🔴 Critical: $critical" >> pr_body.md
+                echo "- 🟠 High: $high" >> pr_body.md
+                echo "- 🟡 Medium: $medium" >> pr_body.md
+              fi
+              echo "" >> pr_body.md
+            fi
+          done
+          
+          echo "### ✅ Validation Status" >> pr_body.md
+          echo "- [x] Dockerfile linting passed" >> pr_body.md
+          echo "- [x] Image builds successfully" >> pr_body.md
+          echo "- [x] Basic functionality tests passed" >> pr_body.md
+          echo "- [x] Security scan completed" >> pr_body.md
+          echo "- [x] SBOM generated" >> pr_body.md
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update BaseOS container images"
+          title: "🔄 Automated BaseOS Update - $(date +'%Y-%m')"
+          body-path: pr_body.md
+          branch: update/baseos-$(date +'%Y%m%d')
+          delete-branch: true
