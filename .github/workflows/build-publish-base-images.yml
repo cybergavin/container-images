@@ -48,6 +48,9 @@ jobs:
       #     private-key: ${{ secrets.GH_APP_KEY }}
 
       - name: Set Variables
+        env:
+          DEFAULT_REGISTRY: ghcr.io
+          IMAGE_NAMESPACE: ${{ github.owner }}
         run: |
           file="${{ matrix.dockerfile }}"
           base=$(basename "$(dirname "$file")")
