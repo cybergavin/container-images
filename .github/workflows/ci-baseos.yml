@@ -1,3 +1,4 @@
+---
 name: CI - Build and Test BaseOS Images
 
 on:
@@ -6,8 +7,6 @@ on:
   workflow_dispatch:
   push:
     branches-ignore: [main]
-    paths:
-      - 'baseOS/**/Dockerfile'
 
 env:
   DEFAULT_REGISTRY: ghcr.io

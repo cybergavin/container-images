@@ -1,0 +1,194 @@
+---
+name: CD - Build and Publish BaseOS Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'baseOS/**/Dockerfile'
+  workflow_dispatch:
+
+env:
+  DEFAULT_REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.list.outputs.files }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          files=$(find . -mindepth 2 -name Dockerfile | jq -R -s -c 'split("\n")[:-1]')
+          echo "files=$files" >> $GITHUB_OUTPUT
+
+  build-publish:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: ${{ fromJson(needs.discover.outputs.files) }}
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set Variables
+        run: |
+          file="${{ matrix.dockerfile }}"
+          base=$(basename "$(dirname "$file")")
+          image="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${base}"
+          echo "BASE=$base" >> $GITHUB_ENV
+          echo "IMAGE=$image" >> $GITHUB_ENV
+
+      - name: Determine BaseOS Version
+        run: |
+          case "$BASE" in
+            amazonlinux) base_img="public.ecr.aws/amazonlinux/amazonlinux:minimal";;
+            almalinux)   base_img="almalinux:minimal";;
+            alpine)      base_img="alpine";;
+            wolfi)       base_img="cgr.dev/chainguard/wolfi-base";;
+            *) echo "Unknown: $BASE"; exit 1;;
+          esac
+          if [ "$BASE" == "wolfi" ]; then version_id="latest"; else
+            version_id=$(docker run --rm "$base_img" awk -F= '/VERSION_ID/ {gsub(/"/,"");print $2}' /etc/os-release)
+          fi
+          echo "VERSION_ID=$version_id" >> $GITHUB_ENV
+
+      - name: Compute Build Tag
+        run: |
+          DATE=$(date +'%Y%m')
+          count=0
+          
+          # Try to get existing tags, handle case where repository doesn't exist
+          if tag_list=$(skopeo list-tags "docker://${IMAGE}" 2>/dev/null); then
+            # Repository exists, count existing tags matching our pattern
+            matching_tags=$(echo "$tag_list" | jq -r '.Tags[]?' | grep "^${VERSION_ID}-b.*-${DATE}$" || true)
+            if [ -n "$matching_tags" ]; then
+              count=$(echo "$matching_tags" | wc -l)
+            fi
+          else
+            echo "Repository ${IMAGE} doesn't exist yet or is inaccessible. Starting with build 01."
+          fi
+          
+          num=$(printf "%02d" $((count + 1)))
+          echo "BUILD_TAG=${VERSION_ID}-b${num}-${DATE}" >> $GITHUB_ENV
+          echo "Computed build tag: ${VERSION_ID}-b${num}-${DATE}"
+
+      - name: Login to Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DEFAULT_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        id: docker_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ env.BUILD_TAG }}
+            type=sha
+            type=raw,value=latest
+
+      - name: Build & Push Image + SBOM & Provenance
+        id: build-and-push
+        uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_SUMMARY: true
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          build-args: VERSION_ID=${{ env.VERSION_ID }}
+          sbom: true
+          provenance: mode=max
+          outputs: type=image,name=${{ env.IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract and Store SBOM
+        run: |
+          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ env.BUILD_TAG }} --format "{{ json .SBOM }}" > sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
+          
+      - name: Upload SBOM as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}
+          path: sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
+
+      - name: Final Security Scan
+        uses: aquasecurity/trivy-action@v0.32.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          vuln-type: 'os,library'
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign and verify the images with GitHub OIDC Token
+        env:
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+          TAGS: ${{ steps.docker_meta.outputs.tags }}
+        run: |
+          images=""
+          for tag in ${TAGS}; do
+            images+="${tag}@${DIGEST} "
+          done
+          cosign sign --yes ${images}
+          cosign verify ${images} \
+          --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+          --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+
+      - name: Generate Release Notes
+        run: |
+          echo "## 🚀 BaseOS Image Released: ${{ env.BASE }}:${{ env.BUILD_TAG }}" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### 📋 Image Details" >> release_notes.md
+          echo "- **Base OS**: ${{ env.BASE }}" >> release_notes.md
+          echo "- **Version**: ${{ env.VERSION_ID }}" >> release_notes.md
+          echo "- **Build Tag**: ${{ env.BUILD_TAG }}" >> release_notes.md
+          echo "- **Digest**: ${{ steps.build-and-push.outputs.digest }}" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### 🔐 Security" >> release_notes.md
+          echo "- ✅ Image signed with Cosign" >> release_notes.md
+          echo "- ✅ SBOM attached" >> release_notes.md
+          echo "- ✅ Provenance attestation included" >> release_notes.md
+          echo "- ✅ Security scan passed" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### 📦 Registry" >> release_notes.md
+          echo "\`\`\`bash" >> release_notes.md
+          echo "docker pull ${{ env.IMAGE }}:${{ env.BUILD_TAG }}" >> release_notes.md
+          echo "docker pull ${{ env.IMAGE }}:latest" >> release_notes.md
+          echo "\`\`\`" >> release_notes.md
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.BASE }}-${{ env.BUILD_TAG }}
+          name: "BaseOS ${{ env.BASE }} - ${{ env.BUILD_TAG }}"
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          files: |
+            sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
