@@ -112,7 +112,7 @@ jobs:
         with:
           registry: ${{ env.DEFAULT_REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ steps.app-token.outputs.token }}
+          password: ${{ secrets.GITHUB_TOKEN }} # Use GitHub token for registry login
 
       - name: Extract metadata
         id: docker_meta
