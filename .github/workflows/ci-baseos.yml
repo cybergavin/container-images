@@ -310,7 +310,7 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
         with:
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ secrets.GHCR_PAT }}
           commit-message: "chore: update BaseOS container images"
           title: "🔄 Automated BaseOS Update - $(date +'%Y-%m')"
           body-path: pr_body.md
