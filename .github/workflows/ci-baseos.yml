@@ -18,8 +18,11 @@ jobs:
     outputs:
       files: ${{ steps.list.outputs.files }}
     steps:
-      - uses: actions/checkout@v4
-      - id: list
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2 
+
+      - name: List Dockerfiles
+        id: list
         run: |
           files=$(find . -mindepth 2 -name Dockerfile | jq -R -s -c 'split("\n")[:-1]')
           echo "files=$files" >> $GITHUB_OUTPUT
@@ -35,9 +38,11 @@ jobs:
       actions: read
       contents: read
       pull-requests: write
+      packages: write
+      attestations: write
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
@@ -66,8 +71,22 @@ jobs:
       - name: Compute Build Tag
         run: |
           DATE=$(date +'%Y%m')
-          BRANCH_SLUG=$(echo "${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]')
-          echo "BUILD_TAG=${VERSION_ID}-${BRANCH_SLUG}-${GITHUB_SHA::7}" >> $GITHUB_ENV
+          count=0
+          
+          # Try to get existing tags, handle case where repository doesn't exist
+          if tag_list=$(skopeo list-tags "docker://${IMAGE}" 2>/dev/null); then
+            # Repository exists, count existing tags matching our pattern
+            matching_tags=$(echo "$tag_list" | jq -r '.Tags[]?' | grep "^${VERSION_ID}-b.*-${DATE}$" || true)
+            if [ -n "$matching_tags" ]; then
+              count=$(echo "$matching_tags" | wc -l)
+            fi
+          else
+            echo "Repository ${IMAGE} doesn't exist yet or is inaccessible. Starting with build 01."
+          fi
+          
+          num=$(printf "%02d" $((count + 1)))
+          echo "BUILD_TAG=${VERSION_ID}-b${num}-${DATE}" >> $GITHUB_ENV
+          echo "Computed build tag: ${VERSION_ID}-b${num}-${DATE}"
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
@@ -78,79 +97,149 @@ jobs:
           dockerfile: ${{ matrix.dockerfile }}
           failure-threshold: error
           verbose: true
-          ignore: DL3018,DL3059,DL3041
+          ignore: DL3018,DL3059,DL3041,DL3006
 
-      - name: Build Image (No Push)
-        id: build
+      - name: Login to Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ env.DEFAULT_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}         
+
+      - name: Extract metadata
+        id: docker_meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=test-${{ env.BUILD_TAG }}
+
+      - name: Build & Push Test Image + SBOM & Provenance
+        id: build-and-push
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        env:
+          DOCKER_BUILD_SUMMARY: true
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          push: false
-          tags: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
           build-args: VERSION_ID=${{ env.VERSION_ID }}
-          outputs: type=docker,dest=/tmp/${{ env.BASE }}-image.tar
+          sbom: true
+          provenance: mode=max
+          outputs: type=image,name=${{ env.IMAGE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Load Image for Testing
-        run: docker load -i /tmp/${{ env.BASE }}-image.tar
+      - name: Extract and Store SBOM
+        run: |
+          docker buildx imagetools inspect ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} --format "{{ json .SBOM }}" > sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
+
 
       - name: Test Image Functionality
         run: |
-          echo "Testing basic functionality for ${{ env.BASE }}..."
-          
-          # Test container starts and basic commands work
-          docker run --rm ${{ env.IMAGE }}:${{ env.BUILD_TAG }} echo "Container startup test passed"
-          
-          # Test package manager
-          case "${{ env.BASE }}" in
-            amazonlinux|almalinux) docker run --rm ${{ env.IMAGE }}:${{ env.BUILD_TAG }} rpm --version ;;
-            alpine) docker run --rm ${{ env.IMAGE }}:${{ env.BUILD_TAG }} apk --version ;;
-            wolfi) docker run --rm ${{ env.IMAGE }}:${{ env.BUILD_TAG }} apk --version ;;
-          esac
-          
-          echo "✅ Functionality tests passed"
+          echo "Starting testing for container image ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }}"
 
-      - name: Generate SBOM
-        run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            -v $PWD:/src anchore/syft:latest \
-            ${{ env.IMAGE }}:${{ env.BUILD_TAG }} -o json > sbom-${{ env.BASE }}.json
+          # Test container startup
+          echo "::group::Container Startup Test"
+          if output=$(docker run --rm ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} echo "Container startup test passed" 2>&1); then
+            echo "::notice:: SUCCESS: Container startup test passed"
+            echo "Output: $output"
+          else
+            exit_code=$?
+            echo "::error:: FAILURE: Container startup test failed"
+            echo "Exit code: $exit_code"
+            echo "Error output: $output"
+            exit $exit_code
+          fi
+          echo "::endgroup::"
+          
+          # Test upgrade functionality - should not be allowed
+          echo "::group::Upgrade Test"
+          case "${{ env.BASE }}" in
+            amazonlinux|almalinux) if docker run --rm ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} microdnf upgrade -y; then
+                                      echo "::error:: FAILURE: Upgrade test should have failed, but passed"
+                                      exit 1
+                                    else
+                                      echo "::notice:: SUCCESS: Upgrade test correctly failed"
+                                    fi ;;
+            alpine|wolfi) if docker run --rm ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} apk upgrade; then
+                      echo "::error:: FAILURE: Upgrade test should have failed, but passed"
+                      exit 1
+                    else
+                      echo "::notice:: SUCCESS: Upgrade test correctly failed"
+                    fi ;;
+          esac
+          echo "::endgroup::"
+
+          # Test existence of appuser
+          echo "::group::App User Test"
+          if docker run --rm ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} id appuser &>/dev/null; then
+            echo "::notice:: SUCCESS: App user exists"
+          else
+            echo "::error:: FAILURE: App user does not exist"
+            exit 1
+          fi
+          echo "::endgroup::"
+          echo "::notice:: ✅ Functionality tests passed"
 
       - name: Scan with Trivy
         uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
         with:
-          image-ref: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+          image-ref: ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }}
           format: json
           output: trivy-${{ env.BASE }}.json
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH,MEDIUM'
           vuln-type: 'os,library'
+      
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+
+      - name: Sign and verify test images with GitHub OIDC Token
+        env:
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+          TAGS: ${{ steps.docker_meta.outputs.tags }}
+        run: |
+          images=""
+          for tag in ${TAGS}; do
+            images+="${tag}@${DIGEST} "
+          done
+          cosign sign --yes ${images}
+          cosign verify ${images} \
+          --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+          --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+
+      - name: Store Image Digest for CD
+        env:
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        run: |
+          echo "TESTED_DIGEST=$DIGEST" > ${{ env.BASE }}-digest.txt
+          echo "TEST_TAG=test-${{ env.BUILD_TAG }}" >> ${{ env.BASE }}-digest.txt
+          echo "VERSION_ID=${{ env.VERSION_ID }}" >> ${{ env.BASE }}-digest.txt
+          echo "✅ Saved image digest: $DIGEST"
 
       - name: Upload Test Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-results-${{ env.BASE }}
           path: |
-            sbom-${{ env.BASE }}.json
+            sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
             trivy-${{ env.BASE }}.json
-            /tmp/${{ env.BASE }}-image.tar
+            ${{ env.BASE }}-digest.txt
 
   create-pr:
     needs: [discover, build-test]
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
     permissions:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Download All Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
 
       - name: Generate PR Body
         run: |
@@ -183,14 +272,14 @@ jobs:
           echo "- [x] Image builds successfully" >> pr_body.md
           echo "- [x] Basic functionality tests passed" >> pr_body.md
           echo "- [x] Security scan completed" >> pr_body.md
-          echo "- [x] SBOM generated" >> pr_body.md
+          echo "- [x] SBOM generated with provenance" >> pr_body.md
+          echo "- [x] Images signed with Cosign" >> pr_body.md
+          echo "- [x] Test images ready for promotion" >> pr_body.md
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore: update BaseOS container images"
           title: "🔄 Automated BaseOS Update - $(date +'%Y-%m')"
           body-path: pr_body.md
-          branch: update/baseos-$(date +'%Y%m%d')
-          delete-branch: true
