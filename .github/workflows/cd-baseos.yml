@@ -175,6 +175,8 @@ jobs:
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
 
       - name: Verify CI Signatures Still Valid
+        env:
+          COSIGN_EXPERIMENTAL: 1  # Enable keyless verification
         run: |
           echo "🔍 Verifying CI signatures are present on promoted image..."
           
@@ -184,6 +186,18 @@ jobs:
             --certificate-oidc-issuer=https://token.actions.githubusercontent.com
           
           echo "✅ CI signatures verified - same signatures apply to production tags"
+          
+          # Verify production tags also show as signed (same digest = same signatures)
+          echo "🔍 Verifying production tags inherit the signatures..."
+          cosign verify ${{ env.IMAGE }}:${{ env.PROD_TAG }} \
+            --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+          
+          cosign verify ${{ env.IMAGE }}:latest \
+            --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+          
+          echo "✅ All tags verified - signatures properly inherited from CI"
           echo "📝 Note: cosign signatures are attached to image digest, not tags"
           echo "   Production tags inherit the signatures from CI automatically"
 

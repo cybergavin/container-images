@@ -200,15 +200,26 @@ jobs:
         env:
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
           TAGS: ${{ steps.docker_meta.outputs.tags }}
+          COSIGN_EXPERIMENTAL: 1  # Enable keyless signing
         run: |
-          images=""
+          echo "🔐 Signing images with GitHub OIDC (keyless)..."
+          
+          # Sign using OIDC token (non-interactive)
           for tag in ${TAGS}; do
-            images+="${tag}@${DIGEST} "
+            echo "Signing: ${tag}@${DIGEST}"
+            cosign sign --yes "${tag}@${DIGEST}"
           done
-          cosign sign --yes ${images}
-          cosign verify ${images} \
-          --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
-          --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+          
+          echo "✅ Verification of signatures..."
+          # Verify signatures work
+          for tag in ${TAGS}; do
+            echo "Verifying: ${tag}@${DIGEST}"
+            cosign verify "${tag}@${DIGEST}" \
+              --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+              --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+          done
+          
+          echo "✅ All images signed and verified successfully"
 
       - name: Store Image Digest for CD
         env:
