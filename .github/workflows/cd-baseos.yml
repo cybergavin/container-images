@@ -133,7 +133,7 @@ jobs:
         with:
           registry: ${{ env.DEFAULT_REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }} # Use GitHub token for registry login
+          password: ${{ secrets.GHCR_PAT }}
 
       - name: Promote Tested Image to Production
         run: |
