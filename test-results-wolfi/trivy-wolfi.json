@@ -1,0 +1,245 @@
+{
+  "SchemaVersion": 2,
+  "CreatedAt": "2025-07-16T06:08:36.730556171Z",
+  "ArtifactName": "ghcr.io/cybergavin/wolfi:test-latest-b05-202507",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "Size": 67372032,
+    "OS": {
+      "Family": "wolfi",
+      "Name": "20230201"
+    },
+    "ImageID": "sha256:0d39ec37fc8e0c709bb000d93508e6f6f2741baae1989cffc9ed836485490d51",
+    "DiffIDs": [
+      "sha256:5cb5945bde03fe81307cb97607c3e6122c86d41ef621fea7def6e204e3c22060",
+      "sha256:2db745b8198d23cf311cd1beb3cf0ffc7d794fd328c259055e1ea8c40bd910d7",
+      "sha256:c02e22ed3c86bbdd468c902253ca797a2e732fecfc4490c327f0fb23adec2d4a",
+      "sha256:a06bdfee73fbcca59ec4f2d856f0a3d5439bc879cea99235cb9a8e3f08ad4763",
+      "sha256:b62a8a270fabd241d3a6f09c425ea94861ef43b93fb225ca3f757a9bba88f5a6",
+      "sha256:05ecab5150029d6267e087660d5b0d57c77554da7736c1d374bc5e5b20686b87",
+      "sha256:d929a4b60727f2f405e4755860d372ccc59705205e57853ae23b9799695b26a2",
+      "sha256:9f958bb5c6678aae77e9c279047a92b5aa32c11d5d1c4d4b3950eb2cb9d64ad6",
+      "sha256:fe3589048997b8ad70f1daf7bb115b051f9deba0c19e7451584903c8cecb3082",
+      "sha256:6c2f650eabc2e04a4967d31546856b32c535748ed10782fd77e4c29a56dfafbe",
+      "sha256:388b49d9158ecca65f7707c42ed2b9478ccb8416dfc2f7a882ecb71991812e6c",
+      "sha256:e69671ab05a1e7ea806ac8c76bc19251538010bf1a40a81fd9d4137639d01760",
+      "sha256:45b430ca82e552beb0f2181a7a7feaf4d713f1702423edb321c326c37c9fe930",
+      "sha256:a5ab58c12cbad413b3a9d59346fb1a4095063a13fd9a6a72040d3e9dc18e447e",
+      "sha256:15838c1df51e89f3cd88fe93a37deca7981e701c523aa6e4afcffdd9bdc7e35f",
+      "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+    ],
+    "RepoTags": [
+      "ghcr.io/cybergavin/wolfi:test-latest-b05-202507"
+    ],
+    "RepoDigests": [
+      "ghcr.io/cybergavin/wolfi@sha256:32cfe6070eef330c30e82831d6d5920686514f8b1b180a645013349353f762e4"
+    ],
+    "ImageConfig": {
+      "architecture": "amd64",
+      "author": "github.com/chainguard-dev/apko",
+      "created": "2025-07-16T06:05:34.997502342Z",
+      "history": [
+        {
+          "created": "2025-07-08T00:25:32Z",
+          "created_by": "apko"
+        },
+        {
+          "created": "2025-07-08T00:25:32Z",
+          "created_by": "apko"
+        },
+        {
+          "created": "2025-07-08T00:25:32Z",
+          "created_by": "apko"
+        },
+        {
+          "created": "2025-07-08T00:25:32Z",
+          "created_by": "apko"
+        },
+        {
+          "created": "2025-07-08T00:25:32Z",
+          "created_by": "apko"
+        },
+        {
+          "created": "2025-07-08T00:25:32Z",
+          "created_by": "apko"
+        },
+        {
+          "created": "2025-07-08T00:25:32Z",
+          "created_by": "apko"
+        },
+        {
+          "created": "2025-07-08T00:25:32Z",
+          "created_by": "apko"
+        },
+        {
+          "created": "2025-07-08T00:25:32Z",
+          "created_by": "apko"
+        },
+        {
+          "created": "2025-07-08T00:25:32Z",
+          "created_by": "apko"
+        },
+        {
+          "created": "2025-07-08T00:25:32Z",
+          "created_by": "apko"
+        },
+        {
+          "created": "2025-07-16T06:05:34Z",
+          "created_by": "LABEL cg.image.maintainer=cybergavin cg.image.description=Validated Wolfi base OS image with essential tools cg.image.support=cybergavin@gmail.com org.opencontainers.image.source=https://github.com/cybergavin/container-images",
+          "comment": "buildkit.dockerfile.v0",
+          "empty_layer": true
+        },
+        {
+          "created": "2025-07-16T06:05:34Z",
+          "created_by": "RUN /bin/sh -c apk update \u0026\u0026 apk upgrade \u0026\u0026 apk add --no-cache     curl     openssl     bash     jq     bind-tools     tzdata # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:05:34Z",
+          "created_by": "RUN /bin/sh -c addgroup -g 1001 appgroup \u0026\u0026     adduser -D -u 1001 -G appgroup -s /bin/bash appuser \u0026\u0026     mkdir -p /app \u0026\u0026     chown appuser:appgroup /app # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:05:34Z",
+          "created_by": "RUN /bin/sh -c cp /sbin/apk /sbin/apk.real # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:05:34Z",
+          "created_by": "RUN /bin/sh -c cat \u003e /sbin/apk \u003c\u003c'EOF'\n#!/bin/bash\n# Check for blocked commands\nfor arg in \"$@\"; do\n    case \"$arg\" in\n        upgrade)\n            echo \"ERROR: 'apk $arg' is not allowed. Use 'apk add' to install new packages.\"\n            echo \"Contact the Cloud Platform Services team if you need package updates.\"\n            exit 1\n            ;;\n    esac\ndone\nexec /sbin/apk.real \"$@\"\nEOF # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:05:34Z",
+          "created_by": "WORKDIR /app",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:05:34Z",
+          "created_by": "USER appuser",
+          "comment": "buildkit.dockerfile.v0",
+          "empty_layer": true
+        }
+      ],
+      "os": "linux",
+      "rootfs": {
+        "type": "layers",
+        "diff_ids": [
+          "sha256:5cb5945bde03fe81307cb97607c3e6122c86d41ef621fea7def6e204e3c22060",
+          "sha256:2db745b8198d23cf311cd1beb3cf0ffc7d794fd328c259055e1ea8c40bd910d7",
+          "sha256:c02e22ed3c86bbdd468c902253ca797a2e732fecfc4490c327f0fb23adec2d4a",
+          "sha256:a06bdfee73fbcca59ec4f2d856f0a3d5439bc879cea99235cb9a8e3f08ad4763",
+          "sha256:b62a8a270fabd241d3a6f09c425ea94861ef43b93fb225ca3f757a9bba88f5a6",
+          "sha256:05ecab5150029d6267e087660d5b0d57c77554da7736c1d374bc5e5b20686b87",
+          "sha256:d929a4b60727f2f405e4755860d372ccc59705205e57853ae23b9799695b26a2",
+          "sha256:9f958bb5c6678aae77e9c279047a92b5aa32c11d5d1c4d4b3950eb2cb9d64ad6",
+          "sha256:fe3589048997b8ad70f1daf7bb115b051f9deba0c19e7451584903c8cecb3082",
+          "sha256:6c2f650eabc2e04a4967d31546856b32c535748ed10782fd77e4c29a56dfafbe",
+          "sha256:388b49d9158ecca65f7707c42ed2b9478ccb8416dfc2f7a882ecb71991812e6c",
+          "sha256:e69671ab05a1e7ea806ac8c76bc19251538010bf1a40a81fd9d4137639d01760",
+          "sha256:45b430ca82e552beb0f2181a7a7feaf4d713f1702423edb321c326c37c9fe930",
+          "sha256:a5ab58c12cbad413b3a9d59346fb1a4095063a13fd9a6a72040d3e9dc18e447e",
+          "sha256:15838c1df51e89f3cd88fe93a37deca7981e701c523aa6e4afcffdd9bdc7e35f",
+          "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+        ]
+      },
+      "config": {
+        "Cmd": [
+          "/bin/sh",
+          "-l"
+        ],
+        "Env": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin",
+          "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
+        ],
+        "Labels": {
+          "cg.image.description": "Validated Wolfi base OS image with essential tools",
+          "cg.image.maintainer": "cybergavin",
+          "cg.image.support": "cybergavin@gmail.com",
+          "dev.chainguard.package.main": "",
+          "org.opencontainers.image.authors": "Chainguard Team https://www.chainguard.dev/",
+          "org.opencontainers.image.created": "2025-07-08T00:25:32Z",
+          "org.opencontainers.image.source": "https://github.com/cybergavin/container-images",
+          "org.opencontainers.image.url": "https://images.chainguard.dev/directory/image/wolfi-base/overview",
+          "org.opencontainers.image.vendor": "Chainguard"
+        },
+        "User": "appuser",
+        "WorkingDir": "/app"
+      }
+    },
+    "Layers": [
+      {
+        "Size": 7085568,
+        "DiffID": "sha256:5cb5945bde03fe81307cb97607c3e6122c86d41ef621fea7def6e204e3c22060"
+      },
+      {
+        "Size": 6787072,
+        "DiffID": "sha256:2db745b8198d23cf311cd1beb3cf0ffc7d794fd328c259055e1ea8c40bd910d7"
+      },
+      {
+        "Size": 693760,
+        "DiffID": "sha256:c02e22ed3c86bbdd468c902253ca797a2e732fecfc4490c327f0fb23adec2d4a"
+      },
+      {
+        "Size": 387072,
+        "DiffID": "sha256:a06bdfee73fbcca59ec4f2d856f0a3d5439bc879cea99235cb9a8e3f08ad4763"
+      },
+      {
+        "Size": 233984,
+        "DiffID": "sha256:b62a8a270fabd241d3a6f09c425ea94861ef43b93fb225ca3f757a9bba88f5a6"
+      },
+      {
+        "Size": 210432,
+        "DiffID": "sha256:05ecab5150029d6267e087660d5b0d57c77554da7736c1d374bc5e5b20686b87"
+      },
+      {
+        "Size": 202752,
+        "DiffID": "sha256:d929a4b60727f2f405e4755860d372ccc59705205e57853ae23b9799695b26a2"
+      },
+      {
+        "Size": 121856,
+        "DiffID": "sha256:9f958bb5c6678aae77e9c279047a92b5aa32c11d5d1c4d4b3950eb2cb9d64ad6"
+      },
+      {
+        "Size": 51712,
+        "DiffID": "sha256:fe3589048997b8ad70f1daf7bb115b051f9deba0c19e7451584903c8cecb3082"
+      },
+      {
+        "Size": 17920,
+        "DiffID": "sha256:6c2f650eabc2e04a4967d31546856b32c535748ed10782fd77e4c29a56dfafbe"
+      },
+      {
+        "Size": 173056,
+        "DiffID": "sha256:388b49d9158ecca65f7707c42ed2b9478ccb8416dfc2f7a882ecb71991812e6c"
+      },
+      {
+        "Size": 51287040,
+        "DiffID": "sha256:e69671ab05a1e7ea806ac8c76bc19251538010bf1a40a81fd9d4137639d01760"
+      },
+      {
+        "Size": 11264,
+        "DiffID": "sha256:45b430ca82e552beb0f2181a7a7feaf4d713f1702423edb321c326c37c9fe930"
+      },
+      {
+        "Size": 104448,
+        "DiffID": "sha256:a5ab58c12cbad413b3a9d59346fb1a4095063a13fd9a6a72040d3e9dc18e447e"
+      },
+      {
+        "Size": 3072,
+        "DiffID": "sha256:15838c1df51e89f3cd88fe93a37deca7981e701c523aa6e4afcffdd9bdc7e35f"
+      },
+      {
+        "Size": 1024,
+        "Digest": "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1",
+        "DiffID": "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+      }
+    ]
+  },
+  "Results": [
+    {
+      "Target": "ghcr.io/cybergavin/wolfi:test-latest-b05-202507 (wolfi 20230201)",
+      "Class": "os-pkgs",
+      "Type": "wolfi"
+    }
+  ]
+}

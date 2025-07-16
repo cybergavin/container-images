@@ -1,0 +1,144 @@
+{
+  "SchemaVersion": 2,
+  "CreatedAt": "2025-07-16T06:09:03.40842206Z",
+  "ArtifactName": "ghcr.io/cybergavin/alpine:test-3.22.1-b01-202507",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "Size": 21452800,
+    "OS": {
+      "Family": "alpine",
+      "Name": "3.22.1"
+    },
+    "ImageID": "sha256:a613c96f95faa593496f1be851226a5dbf0d48282093d03fe02c6d05abf1f6b3",
+    "DiffIDs": [
+      "sha256:418dccb7d85a63a6aa574439840f7a6fa6fd2321b3e2394568a317735e867d35",
+      "sha256:3376db1bd07602e6ee94644cde036a4ac703381a3bbcdcfebbed67bfe75e172c",
+      "sha256:396122bcdbc47efb735905593694e0129d9b511a81bc042cd73507b9cac98d80",
+      "sha256:32b39edef1ebc55343eb684798b9900dd210b10f43057baec0a3db489b4e7aed",
+      "sha256:a0cf7ce0a6734f51ce40536b9e9716326f130c672ab8bb42e0737b400e77c368",
+      "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+    ],
+    "RepoTags": [
+      "ghcr.io/cybergavin/alpine:test-3.22.1-b01-202507"
+    ],
+    "RepoDigests": [
+      "ghcr.io/cybergavin/alpine@sha256:9ad84155f681883578d14416cf7ba7fdbbf7cd5e6e041c963cee8c7828b1d32c"
+    ],
+    "ImageConfig": {
+      "architecture": "amd64",
+      "created": "2025-07-16T06:08:39.279149968Z",
+      "history": [
+        {
+          "created": "2025-07-15T11:01:16Z",
+          "created_by": "ADD alpine-minirootfs-3.22.1-x86_64.tar.gz / # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-15T11:01:16Z",
+          "created_by": "CMD [\"/bin/sh\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "empty_layer": true
+        },
+        {
+          "created": "2025-07-16T06:08:39Z",
+          "created_by": "LABEL cg.image.maintainer=cybergavin cg.image.description=Validated Alpine base OS image with essential tools cg.image.support=cybergavin@gmail.com org.opencontainers.image.source=https://github.com/cybergavin/container-images",
+          "comment": "buildkit.dockerfile.v0",
+          "empty_layer": true
+        },
+        {
+          "created": "2025-07-16T06:08:39Z",
+          "created_by": "RUN /bin/sh -c apk update \u0026\u0026 apk upgrade \u0026\u0026 apk add --no-cache     curl     openssl     bash     jq     unzip     tzdata # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:08:39Z",
+          "created_by": "RUN /bin/sh -c addgroup -g 1001 appgroup \u0026\u0026     adduser -D -u 1001 -G appgroup -s /bin/bash appuser \u0026\u0026     mkdir -p /app \u0026\u0026     chown appuser:appgroup /app # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:08:39Z",
+          "created_by": "RUN /bin/sh -c cp /sbin/apk /sbin/apk.real # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:08:39Z",
+          "created_by": "RUN /bin/sh -c cat \u003e /sbin/apk \u003c\u003c'EOF'\n#!/bin/bash\n# Check for blocked commands\nfor arg in \"$@\"; do\n    case \"$arg\" in\n        upgrade)\n            echo \"ERROR: 'apk $arg' is not allowed. Use 'apk add' to install new packages.\"\n            echo \"Contact the Cloud Platform Services team if you need package updates.\"\n            exit 1\n            ;;\n    esac\ndone\nexec /sbin/apk.real \"$@\"\nEOF # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:08:39Z",
+          "created_by": "WORKDIR /app",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:08:39Z",
+          "created_by": "USER appuser",
+          "comment": "buildkit.dockerfile.v0",
+          "empty_layer": true
+        }
+      ],
+      "os": "linux",
+      "rootfs": {
+        "type": "layers",
+        "diff_ids": [
+          "sha256:418dccb7d85a63a6aa574439840f7a6fa6fd2321b3e2394568a317735e867d35",
+          "sha256:3376db1bd07602e6ee94644cde036a4ac703381a3bbcdcfebbed67bfe75e172c",
+          "sha256:396122bcdbc47efb735905593694e0129d9b511a81bc042cd73507b9cac98d80",
+          "sha256:32b39edef1ebc55343eb684798b9900dd210b10f43057baec0a3db489b4e7aed",
+          "sha256:a0cf7ce0a6734f51ce40536b9e9716326f130c672ab8bb42e0737b400e77c368",
+          "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+        ]
+      },
+      "config": {
+        "Cmd": [
+          "/bin/sh"
+        ],
+        "Env": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ],
+        "Labels": {
+          "cg.image.description": "Validated Alpine base OS image with essential tools",
+          "cg.image.maintainer": "cybergavin",
+          "cg.image.support": "cybergavin@gmail.com",
+          "org.opencontainers.image.source": "https://github.com/cybergavin/container-images"
+        },
+        "User": "appuser",
+        "WorkingDir": "/app"
+      }
+    },
+    "Layers": [
+      {
+        "Size": 8596480,
+        "DiffID": "sha256:418dccb7d85a63a6aa574439840f7a6fa6fd2321b3e2394568a317735e867d35"
+      },
+      {
+        "Size": 12769280,
+        "DiffID": "sha256:3376db1bd07602e6ee94644cde036a4ac703381a3bbcdcfebbed67bfe75e172c"
+      },
+      {
+        "Size": 11264,
+        "DiffID": "sha256:396122bcdbc47efb735905593694e0129d9b511a81bc042cd73507b9cac98d80"
+      },
+      {
+        "Size": 72192,
+        "DiffID": "sha256:32b39edef1ebc55343eb684798b9900dd210b10f43057baec0a3db489b4e7aed"
+      },
+      {
+        "Size": 2560,
+        "DiffID": "sha256:a0cf7ce0a6734f51ce40536b9e9716326f130c672ab8bb42e0737b400e77c368"
+      },
+      {
+        "Size": 1024,
+        "Digest": "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1",
+        "DiffID": "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+      }
+    ]
+  },
+  "Results": [
+    {
+      "Target": "ghcr.io/cybergavin/alpine:test-3.22.1-b01-202507 (alpine 3.22.1)",
+      "Class": "os-pkgs",
+      "Type": "alpine"
+    }
+  ]
+}

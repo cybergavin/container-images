@@ -1,0 +1,145 @@
+{
+  "SchemaVersion": 2,
+  "CreatedAt": "2025-07-16T06:08:56.217093921Z",
+  "ArtifactName": "ghcr.io/cybergavin/amazonlinux:test-2023-b03-202507",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "Size": 118099968,
+    "OS": {
+      "Family": "amazon",
+      "Name": "2023.8.20250707 (Amazon Linux)"
+    },
+    "ImageID": "sha256:3356a40fe57847c898d3d897306c00c58325a0815d81e6daa50a5672027eb0a3",
+    "DiffIDs": [
+      "sha256:ab54ce2359660dd9b12cea1707318dc43c6536a85d67839f6f398f90c6df45c6",
+      "sha256:7bbbf8695b60c26899f98671048bd0156cc10448395b40237261ac78ee7f34c2",
+      "sha256:76b75d3c8965c229f8d5ea7e8875f21ac27ac7dc05e4957e2925762c552deebb",
+      "sha256:c8624255a4fe9a963a530178471a8781c505836fe491b4cd9455bb51deedb5e6",
+      "sha256:3d4fdb9b4d91f6734ddf337bb78be6d7af415fd380c239aa9f6a8b24954c1dde",
+      "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+    ],
+    "RepoTags": [
+      "ghcr.io/cybergavin/amazonlinux:test-2023-b03-202507"
+    ],
+    "RepoDigests": [
+      "ghcr.io/cybergavin/amazonlinux@sha256:212ec15cd83cf9de9b9af4613a748f54551953103e2c918cfc61f8ab63e44349"
+    ],
+    "ImageConfig": {
+      "architecture": "amd64",
+      "created": "2025-07-16T06:08:40.078381068Z",
+      "history": [
+        {
+          "created": "2025-07-08T17:35:33Z",
+          "created_by": "ADD al2023-container-minimal-2023.8.20250707.0-amd64.tar.xz / # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-08T17:35:33Z",
+          "created_by": "CMD [\"/bin/bash\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "empty_layer": true
+        },
+        {
+          "created": "2025-07-16T06:08:39Z",
+          "created_by": "LABEL cg.image.maintainer=cybergavin cg.image.description=Validated AmazonLinux base OS image with essential tools cg.image.support=cybergavin@gmail.com org.opencontainers.image.source=https://github.com/cybergavin/container-images",
+          "comment": "buildkit.dockerfile.v0",
+          "empty_layer": true
+        },
+        {
+          "created": "2025-07-16T06:08:39Z",
+          "created_by": "RUN /bin/sh -c microdnf update -y \u0026\u0026 microdnf install -y --nodocs     shadow-utils     openssl     jq     unzip     bind-utils     tzdata     \u0026\u0026 microdnf clean all # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:08:39Z",
+          "created_by": "RUN /bin/sh -c groupadd -g 1001 appgroup \u0026\u0026     useradd -m -u 1001 -g appgroup -s /bin/bash appuser \u0026\u0026     mkdir -p /app \u0026\u0026     chown appuser:appgroup /app # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:08:39Z",
+          "created_by": "RUN /bin/sh -c cp /bin/microdnf /bin/microdnf.real # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:08:40Z",
+          "created_by": "RUN /bin/sh -c cat \u003e /bin/microdnf \u003c\u003c'EOF'\n#!/bin/bash\n# Check for blocked commands\nfor arg in \"$@\"; do\n    case \"$arg\" in\n        update|upgrade)\n            echo \"ERROR: 'microdnf $arg' is not allowed. Use 'microdnf install' to install new packages.\"\n            echo \"Contact the Cloud Platform Services team if you need package updates.\"\n            exit 1\n            ;;\n    esac\ndone\nexec /bin/microdnf.real \"$@\"\nEOF # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:08:40Z",
+          "created_by": "WORKDIR /app",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2025-07-16T06:08:40Z",
+          "created_by": "USER appuser",
+          "comment": "buildkit.dockerfile.v0",
+          "empty_layer": true
+        }
+      ],
+      "os": "linux",
+      "rootfs": {
+        "type": "layers",
+        "diff_ids": [
+          "sha256:ab54ce2359660dd9b12cea1707318dc43c6536a85d67839f6f398f90c6df45c6",
+          "sha256:7bbbf8695b60c26899f98671048bd0156cc10448395b40237261ac78ee7f34c2",
+          "sha256:76b75d3c8965c229f8d5ea7e8875f21ac27ac7dc05e4957e2925762c552deebb",
+          "sha256:c8624255a4fe9a963a530178471a8781c505836fe491b4cd9455bb51deedb5e6",
+          "sha256:3d4fdb9b4d91f6734ddf337bb78be6d7af415fd380c239aa9f6a8b24954c1dde",
+          "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+        ]
+      },
+      "config": {
+        "Cmd": [
+          "/bin/bash"
+        ],
+        "Env": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ],
+        "Labels": {
+          "cg.image.description": "Validated AmazonLinux base OS image with essential tools",
+          "cg.image.maintainer": "cybergavin",
+          "cg.image.support": "cybergavin@gmail.com",
+          "org.opencontainers.image.source": "https://github.com/cybergavin/container-images"
+        },
+        "User": "appuser",
+        "WorkingDir": "/app",
+        "ArgsEscaped": true
+      }
+    },
+    "Layers": [
+      {
+        "Size": 102418944,
+        "DiffID": "sha256:ab54ce2359660dd9b12cea1707318dc43c6536a85d67839f6f398f90c6df45c6"
+      },
+      {
+        "Size": 15542784,
+        "DiffID": "sha256:7bbbf8695b60c26899f98671048bd0156cc10448395b40237261ac78ee7f34c2"
+      },
+      {
+        "Size": 20992,
+        "DiffID": "sha256:76b75d3c8965c229f8d5ea7e8875f21ac27ac7dc05e4957e2925762c552deebb"
+      },
+      {
+        "Size": 113152,
+        "DiffID": "sha256:c8624255a4fe9a963a530178471a8781c505836fe491b4cd9455bb51deedb5e6"
+      },
+      {
+        "Size": 3072,
+        "DiffID": "sha256:3d4fdb9b4d91f6734ddf337bb78be6d7af415fd380c239aa9f6a8b24954c1dde"
+      },
+      {
+        "Size": 1024,
+        "Digest": "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1",
+        "DiffID": "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+      }
+    ]
+  },
+  "Results": [
+    {
+      "Target": "ghcr.io/cybergavin/amazonlinux:test-2023-b03-202507 (amazon 2023.8.20250707 (Amazon Linux))",
+      "Class": "os-pkgs",
+      "Type": "amazon"
+    }
+  ]
+}
