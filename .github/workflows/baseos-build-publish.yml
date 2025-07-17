@@ -160,7 +160,26 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL,HIGH,MEDIUM
           vuln-type: os,library
-          format: table
+          format: json
+          output: trivy-results.json
+
+      - name: Add formatted results to summary
+        run: |
+          echo "## 🔍 Trivy Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Image: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Count vulnerabilities by severity
+          CRITICAL=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL") | .VulnerabilityID' trivy-results.json | wc -l)
+          HIGH=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH") | .VulnerabilityID' trivy-results.json | wc -l)
+          MEDIUM=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM") | .VulnerabilityID' trivy-results.json | wc -l)
+          
+          echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔴 Critical | $CRITICAL |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🟠 High | $HIGH |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🟡 Medium | $MEDIUM |" >> $GITHUB_STEP_SUMMARY
 
       # ──────────────────────────────────────────────────────────────────────────────
       # 5) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
@@ -207,7 +226,7 @@ jobs:
       - name: Upload attestations
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: attestations
+          name: attestations-${{ env.BASE }}-${{ env.BUILD_TAG }}
           path: ./attestations/
 
       # ──────────────────────────────────────────────────────────────────────────────
