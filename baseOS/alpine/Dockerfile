@@ -1,4 +1,14 @@
-FROM alpine
+#------------------------------------------------------------------------------------------
+# Dockerfile for Alpine Base OS Image
+# Maintainer: cybergavin
+# Description: A validated Alpine base OS image with essential tools
+#------------------------------------------------------------------------------------------
+# Do not override the default base image
+# The value of BASE_IMAGE is set in the GitHub Actions workflow
+# to ensure consistency across builds and tests.
+# If you need to change the base image, update the workflow file instead.
+ARG BASE_IMAGE=alpine
+FROM ${BASE_IMAGE}
 
 # Add metadata
 LABEL cg.image.maintainer="cybergavin" \

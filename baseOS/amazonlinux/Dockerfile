@@ -1,4 +1,14 @@
-FROM public.ecr.aws/amazonlinux/amazonlinux:minimal
+#------------------------------------------------------------------------------------------
+# Dockerfile for AmazonLinux Base OS Image
+# Maintainer: cybergavin
+# Description: A validated AmazonLinux minimal base OS image with essential tools
+#------------------------------------------------------------------------------------------
+# Do not override the default base image
+# The value of BASE_IMAGE is set in the GitHub Actions workflow
+# to ensure consistency across builds and tests.
+# If you need to change the base image, update the workflow file instead.
+ARG BASE_IMAGE=public.ecr.aws/amazonlinux/amazonlinux:minimal
+FROM ${BASE_IMAGE}
 
 # Add metadata
 LABEL cg.image.maintainer="cybergavin" \

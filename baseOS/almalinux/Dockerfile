@@ -1,4 +1,14 @@
-FROM almalinux:9.4-minimal
+#------------------------------------------------------------------------------------------
+# Dockerfile for Almalinux Base OS Image
+# Maintainer: cybergavin
+# Description: A validated Almalinux minimal base OS image with essential tools
+#------------------------------------------------------------------------------------------
+# Do not override the default base image
+# The value of BASE_IMAGE is set in the GitHub Actions workflow
+# to ensure consistency across builds and tests.
+# If you need to change the base image, update the workflow file instead.
+ARG BASE_IMAGE=almalinux:minimal
+FROM ${BASE_IMAGE}
 
 # Add metadata
 LABEL cg.image.maintainer="cybergavin" \
@@ -7,7 +17,7 @@ LABEL cg.image.maintainer="cybergavin" \
       org.opencontainers.image.source="https://github.com/cybergavin/container-images"
 
 # Install essential tools and clean cache
-RUN microdnf install -y --nodocs \
+RUN microdnf update -y && microdnf install -y --nodocs \
     openssl \
     jq \
     unzip \
