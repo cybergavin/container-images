@@ -1,4 +1,4 @@
-FROM almalinux:minimal
+FROM almalinux:8-minimal
 
 # Add metadata
 LABEL cg.image.maintainer="cybergavin" \
