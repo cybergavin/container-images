@@ -1,15 +1,15 @@
 ---
-# This workflow may be triggered by a schedule or manually to rebuild and publish all container images
-name: TEST Build and Publish BaseOS Images
+# This workflow may be triggered by a schedule or manually, to rebuild and publish baseOS container images
+name: Build and Publish BaseOS Images
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 8 * * *'  # Every day at 8 AM UTC
+    - cron: '0 8 */14 * *'  # Every fortnight at 8 AM UTC
 
 env:
   DEFAULT_REGISTRY: ghcr.io
-  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+  IMAGE_NAMESPACE: ${{ github.repository }}
 
 permissions:
   contents: write
@@ -70,7 +70,7 @@ jobs:
           set -euo pipefail
           case "$BASE" in
             amazonlinux) base_img="public.ecr.aws/amazonlinux/amazonlinux:minimal";;
-            almalinux)   base_img="almalinux:9.4-minimal";;
+            almalinux)   base_img="almalinux:minimal";;
             alpine)      base_img="alpine";;
             wolfi)       base_img="cgr.dev/chainguard/wolfi-base";;
             *) echo "Unknown base '$BASE'"; exit 1;;
@@ -190,7 +190,7 @@ jobs:
         with:
           registry: ${{ env.DEFAULT_REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Re-build & PUSH image with SBOM + provenance
         id: push_remote
