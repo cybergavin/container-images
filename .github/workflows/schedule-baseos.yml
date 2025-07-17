@@ -1,11 +1,11 @@
 ---
-# This workflow is triggered when changes are pushed to any short-lived branch.
-name: CI - Build and Test BaseOS Images
+# This workflow is triggered by a schedule and rebuilds all container images
+name: Schedule - Build and Test BaseOS Images
 
 on:
-  push:
-    branches-ignore:
-      - main
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * *'  # Every day at 8 AM UTC
 
 env:
   DEFAULT_REGISTRY: ghcr.io
@@ -16,62 +16,31 @@ permissions:
   pull-requests: write # For creating PRs
   packages: write      # For pushing test images
   id-token: write      # For cosign OIDC signing
+  attestations: write  # For SBOM attachments
 
 jobs:
-  detect-changes:
+  discover:
+    if: github.event_name != 'schedule' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
-      files: ${{ steps.detect.outputs.files }}
-      non_docker_changed: ${{ steps.detect.outputs.non_docker_changed }}
+      files: ${{ steps.list.outputs.files }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Check for changes to Dockerfiles
-        id: detect
-        shell: bash
+      - name: List Dockerfiles
+        id: list
         run: |
-          set -euo pipefail
-          echo "🔍 Detecting file changes..."
-          git fetch origin main
-          mapfile -t changed_files < <(git diff --diff-filter=ACMR --name-only origin/main...HEAD)
+          files=$(find . -mindepth 2 -name Dockerfile | jq -R -s -c 'split("\n")[:-1]')
+          echo "files=$files" >> $GITHUB_OUTPUT
 
-          docker_files=()
-          non_docker_files=()
-
-          for file in "${changed_files[@]}"; do
-            if [[ "$file" == */Dockerfile ]]; then
-              docker_files+=("$file")
-            else
-              non_docker_files+=("$file")
-            fi
-          done
-
-          # Output Dockerfiles
-          if [ ${#docker_files[@]} -eq 0 ]; then
-            echo "::notice:: No Dockerfiles changed."
-            echo "files=[]" >> $GITHUB_OUTPUT
-          else
-            echo "files=$(printf '%s\n' "${docker_files[@]}" | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
-            echo "::notice:: Found Dockerfiles: ${docker_files[*]}"
-          fi
-
-          # Output flag if any non-Dockerfiles changed
-          if [ ${#non_docker_files[@]} -gt 0 ]; then
-            echo "non_docker_changed=true" >> $GITHUB_OUTPUT
-            echo "::notice:: Found other changed files: ${non_docker_files[*]}"
-          else
-            echo "non_docker_changed=false" >> $GITHUB_OUTPUT
-          fi
-
-  build-test:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.files != '[]'
+  build:
+    needs: discover
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        dockerfile: ${{ fromJson(needs.detect-changes.outputs.files) }}
+        dockerfile: ${{ fromJson(needs.discover.outputs.files) }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -145,7 +114,8 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=raw,value=test-${{ env.BUILD_TAG }}
+            type=raw,value=${{ env.BUILD_TAG }}
+            type=raw,value=latest
 
       - name: Build & Push Test Image, generate SBOM & Provenance
         id: build-and-push
@@ -249,130 +219,3 @@ jobs:
           done
           echo "::notice:: ✅ All tags passed signature, provenance, and SBOM verification."
           echo "::endgroup::"
-
-      - name: Store Image Digest for CD
-        env:
-          DIGEST: ${{ steps.build-and-push.outputs.digest }}
-        run: |
-          echo "TESTED_DIGEST=$DIGEST" > ${{ env.BASE }}-digest.txt
-          echo "TEST_TAG=test-${{ env.BUILD_TAG }}" >> ${{ env.BASE }}-digest.txt
-          echo "VERSION_ID=${{ env.VERSION_ID }}" >> ${{ env.BASE }}-digest.txt
-          echo "::notice:: ✅ Saved image digest: $DIGEST"
-
-      - name: Upload Test Artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-${{ env.BASE }}
-          path: |
-            sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
-            trivy-${{ env.BASE }}.json
-            ${{ env.BASE }}-digest.txt
-
-  create-pr:
-    needs: [detect-changes, build-test]
-    if: |
-      (
-        always() &&
-        needs.detect-changes.result == 'success' &&
-        (needs.build-test.result == 'success' || needs.build-test.result == 'skipped')
-      )
-    runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Download test results
-        if: needs.build-test.result == 'success'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: test-results-*
-          merge-multiple: false
-
-      - name: Generate PR Body
-        if: needs.build-test.result == 'success'
-        run: |
-          echo "## 🔄 Automated BaseOS Update" > pr_body.md
-          echo "" >> pr_body.md
-          echo "This PR contains automated updates for BaseOS container images." >> pr_body.md
-          echo "" >> pr_body.md
-          echo "### 📊 Build Results" >> pr_body.md
-          
-          for artifact_dir in test-results-*; do
-            if [ -d "$artifact_dir" ]; then
-              base=$(echo "$artifact_dir" | sed 's/test-results-//')
-              echo "#### $base" >> pr_body.md
-              
-              # Check for vulnerabilities
-              if [ -f "$artifact_dir/trivy-$base.json" ]; then
-                critical=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL") | .VulnerabilityID' "$artifact_dir/trivy-$base.json" | wc -l)
-                high=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH") | .VulnerabilityID' "$artifact_dir/trivy-$base.json" | wc -l)
-                medium=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM") | .VulnerabilityID' "$artifact_dir/trivy-$base.json" | wc -l)
-                echo "- 🔴 Critical: $critical" >> pr_body.md
-                echo "- 🟠 High: $high" >> pr_body.md
-                echo "- 🟡 Medium: $medium" >> pr_body.md
-              fi
-              echo "" >> pr_body.md
-            fi
-          done
-          
-          echo "### ✅ Validation Status" >> pr_body.md
-          echo "- [x] Dockerfile linting passed" >> pr_body.md
-          echo "- [x] Image builds successfully" >> pr_body.md
-          echo "- [x] Basic functionality tests passed" >> pr_body.md
-          echo "- [x] Security scan completed" >> pr_body.md
-          echo "- [x] SBOM generated with provenance" >> pr_body.md
-          echo "- [x] Images signed with Cosign" >> pr_body.md
-          echo "- [x] Test images ready for promotion" >> pr_body.md
-
-      - name: Extract branch name
-        id: extract_branch
-        run: echo "branch_name=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_ENV
-
-      - name: Check for existing Pull Request
-        id: check_pr
-        shell: bash
-        run: |
-          set -euo pipefail
-          existing_pr=$(gh pr list --base main --head $branch_name --json number --jq '.[0].number')
-          if [ -n "$existing_pr" ]; then
-            echo "PR exists for this branch: $existing_pr"
-            echo "pr_exists=true" >> $GITHUB_ENV
-          else
-            echo "PR does not exist for this branch."
-            echo "pr_exists=false" >> $GITHUB_ENV
-          fi
-
-      - name: Create Pull Request if it doesn't exist
-        if: env.pr_exists == 'false'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "Creating a pull request for branch: $branch_name"
-          # Create a new PR using the GitHub CLI
-          if [[ "${{ needs.build-test.result }}" == 'success' ]]; then
-            echo "🔍 Images built — using detailed PR body."
-            PR_URL=$(gh pr create \
-              --base main \
-              --head "$branch_name" \
-              --title "Auto PR (created by ${{ github.workflow }}): $branch_name" \
-              --body-file pr_body.md)
-          else
-            echo "ℹ️ No Dockerfiles changed — using generic PR message."
-            PR_URL=$(gh pr create \
-              --base main \
-              --head "$branch_name" \
-              --title "Auto PR (created by ${{ github.workflow }}): $branch_name" \
-              --body "This PR was auto-generated for branch $branch_name.")
-          fi
-
-          echo "PR created: $PR_URL"
-
-          # Get PR number from URL
-          PR_NUMBER=$(basename "$PR_URL")
-
-          # Get the head commit SHA of the PR
-          PR_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid)
-
-          echo "Head commit SHA of PR #$PR_NUMBER is: $PR_SHA"

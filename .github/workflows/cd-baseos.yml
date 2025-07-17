@@ -4,10 +4,8 @@ name: CD - Build and Publish BaseOS Images
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
-  actions: read
   contents: write      # For creating GitHub releases  
   packages: write      # For promoting images
   id-token: write      # For cosign OIDC verification
@@ -56,7 +54,7 @@ jobs:
           
           images_json=$(printf '%s\n' "${tested_images[@]}" | jq -R . | jq -s .)
           echo "images=$images_json" >> $GITHUB_OUTPUT
-          echo "📦 Will promote ${#tested_images[@]} tested images: ${tested_images[*]}"
+          echo "::notice:: Will promote ${#tested_images[@]} tested images: ${tested_images[*]}"
 
   promote-publish:
     needs: discover-tested-images
@@ -70,13 +68,6 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-
-      - name: Generate GitHub App Token
-        id: app-token
-        uses: actions/create-github-app-token@df432ceedc7162793a195dd1713ff69aefc7379e # v2.0.6
-        with:
-          app-id: ${{ vars.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_KEY }}
 
       - name: Set Variables
         run: |
@@ -93,12 +84,13 @@ jobs:
         continue-on-error: true
 
       - name: Load Tested Image Info
+        shell: bash
         run: |
+          set -euo pipefail
           if [ ! -f "./artifacts/${{ env.BASE }}-digest.txt" ]; then
             echo "❌ No tested image found for ${{ env.BASE }}."
             echo "🔄 CI pipeline must complete successfully before CD can run."
             echo "Either run CI workflow first, or trigger this workflow with workflow_dispatch after CI completes."
-            exit 1
           fi
           
           source ./artifacts/${{ env.BASE }}-digest.txt
@@ -108,25 +100,9 @@ jobs:
           
           # Extract the build tag from test tag (remove 'test-' prefix)
           CI_BUILD_TAG=$(echo "$TEST_TAG" | sed 's/^test-//')
-          echo "CI_BUILD_TAG=$CI_BUILD_TAG" >> $GITHUB_ENV
+          echo "PROD_TAG=$CI_BUILD_TAG" >> $GITHUB_ENV
           
           echo "✅ Found tested image: ${{ env.IMAGE }}@$TESTED_DIGEST"
-
-      - name: Determine Production Tags
-        run: |
-          DATE=$(date +'%Y%m')
-          count=0
-          
-          # Try to get existing tags for production versioning
-          if tag_list=$(skopeo list-tags "docker://${IMAGE}" 2>/dev/null); then
-            matching_tags=$(echo "$tag_list" | jq -r '.Tags[]?' | grep "^.*-b.*-${DATE}$" || true)
-            if [ -n "$matching_tags" ]; then
-              count=$(echo "$matching_tags" | wc -l)
-            fi
-          fi
-          
-          num=$(printf "%02d" $((count + 1)))
-          echo "PROD_TAG=${{ env.VERSION_ID }}-b${num}-${DATE}" >> $GITHUB_ENV
 
       - name: Login to Registry
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
@@ -151,23 +127,18 @@ jobs:
           docker push ${{ env.IMAGE }}:${{ env.PROD_TAG }}
           docker push ${{ env.IMAGE }}:latest
           
-          echo "✅ Production tags created:"
+          echo "::notice:: ✅ Production tags created:"
           echo "   📦 ${{ env.IMAGE }}:${{ env.PROD_TAG }} → ${{ env.TESTED_DIGEST }}"
           echo "   📦 ${{ env.IMAGE }}:latest → ${{ env.TESTED_DIGEST }}"
           echo ""
           echo "🧹 Test tag still exists but will be cleaned up:"
           echo "   🧪 ${{ env.IMAGE }}:${{ env.TEST_TAG }} → ${{ env.TESTED_DIGEST }}"
-
-      - name: Extract and Store SBOM  
-        run: |
-          # Copy SBOM from CI artifacts and associate with production tag
-          cp ./artifacts/sbom-${{ env.BASE }}-${{ env.CI_BUILD_TAG }}.json sbom-${{ env.BASE }}-${{ env.PROD_TAG }}.json
-          
+    
       - name: Upload SBOM as Artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sbom-${{ env.BASE }}-${{ env.PROD_TAG }}
-          path: sbom-${{ env.BASE }}-${{ env.PROD_TAG }}.json
+          path: ./artifacts/sbom-${{ env.BASE }}-${{ env.PROD_TAG }}.json
 
       - name: Final Security Verification
         uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
@@ -205,9 +176,7 @@ jobs:
             --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
             --certificate-oidc-issuer=https://token.actions.githubusercontent.com
           
-          echo "✅ All tags verified - signatures properly inherited from CI"
-          echo "📝 Note: cosign signatures are attached to image digest, not tags"
-          echo "   Production tags inherit the signatures from CI automatically"
+          echo "::notice:: ✅ All tags verified - signatures properly inherited from CI"
 
       - name: Clean up test tags
         run: |
@@ -222,7 +191,7 @@ jobs:
             echo "ℹ️  Test tag not found or already removed"
           fi
           
-          echo "✅ Registry cleanup completed"
+          echo "::notice:: ✅ Registry cleanup completed"
           echo "📦 Production tags available:"
           echo "   ${{ env.IMAGE }}:${{ env.PROD_TAG }}"
           echo "   ${{ env.IMAGE }}:latest"
