@@ -241,7 +241,6 @@ jobs:
       # -----------------------------------------------------------------------------------------------
       - name: Extract attestations
         env:
-          COSIGN_EXPERIMENTAL: 1
           DIGEST: ${{ steps.push_remote.outputs.digest }}
         shell: bash      
         run: |
