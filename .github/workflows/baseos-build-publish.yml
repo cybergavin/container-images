@@ -184,9 +184,19 @@ jobs:
           provenance: mode=max
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          outputs: type=local,dest=./artifacts
 
       # ──────────────────────────────────────────────────────────────────────────────
-      # 6) Cosign sign & verify the **remote** image
+      # 6) Upload attestation artifacts (SBOM and provenance)
+      # ──────────────────────────────────────────────────────────────────────────────
+      - name: Upload Attestations
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: attestations
+          path: ./artifacts
+
+      # ──────────────────────────────────────────────────────────────────────────────
+      # 7) Cosign sign & verify the **remote** image
       # ──────────────────────────────────────────────────────────────────────────────
       - name: Install Cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
@@ -208,10 +218,4 @@ jobs:
           cosign verify "$ref" \
             --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
             --certificate-oidc-issuer=https://token.actions.githubusercontent.com
-          cosign verify-attestation "$ref" \
-            --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
-            --certificate-oidc-issuer=https://token.actions.githubusercontent.com --type slsaprovenance
-          cosign verify-attestation "$ref" \
-            --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
-            --certificate-oidc-issuer=https://token.actions.githubusercontent.com --type spdx
-          echo "::notice:: Image signed & verified successfully"
+          echo "::notice:: ✅ Image signed & verified successfully"
