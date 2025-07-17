@@ -48,8 +48,7 @@ jobs:
           
           # Convert to JSON array for matrix
           if [ ${#tested_images[@]} -eq 0 ]; then
-            echo "❌ No tested images found. CI must run successfully first."
-            exit 1
+            echo "❌ No tested images found. CD will not run."
           fi
           
           images_json=$(printf '%s\n' "${tested_images[@]}" | jq -R . | jq -s .)
@@ -58,6 +57,7 @@ jobs:
 
   promote-publish:
     needs: discover-tested-images
+    if: needs.discover-tested-images.outputs.images != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
