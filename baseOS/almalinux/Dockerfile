@@ -7,7 +7,7 @@ LABEL cg.image.maintainer="cybergavin" \
       org.opencontainers.image.source="https://github.com/cybergavin/container-images"
 
 # Install essential tools and clean cache
-RUN microdnf update -y && microdnf install -y --nodocs \
+RUN microdnf install -y --nodocs \
     openssl \
     jq \
     unzip \
