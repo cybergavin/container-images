@@ -214,8 +214,12 @@ jobs:
             cosign verify "${tag}@${DIGEST}" \
               --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
               --certificate-oidc-issuer=https://token.actions.githubusercontent.com
-            cosign verify-attestation "${tag}@${DIGEST}" --type slsaprovenance
-            cosign verify-attestation "${tag}@${DIGEST}" --type spdx
+            cosign verify-attestation "${tag}@${DIGEST}" \
+              --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+              --certificate-oidc-issuer=https://token.actions.githubusercontent.com --type slsaprovenance
+            cosign verify-attestation "${tag}@${DIGEST}" \
+              --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+              --certificate-oidc-issuer=https://token.actions.githubusercontent.com --type spdx
           done
           echo "::notice:: ✅ All tags passed signature, provenance, and SBOM verification."
           echo "::endgroup::"
