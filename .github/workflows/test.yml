@@ -249,11 +249,13 @@ jobs:
           mkdir -p ./attestations
           ref="${{ env.IMAGE }}@${DIGEST}"
           
-          echo "⬇️ Downloading SBOM..."
-          cosign download sbom "$ref" > ./attestations/sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.spdx.json
+          # Extract SBOM
+          docker buildx imagetools inspect $ref \
+          --format "{{ json .SBOM }}" > ./attestations/sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.spdx.json
 
-          echo "⬇️ Downloading provenance..."
-          cosign download attestation "$ref" > ./attestations/provenance-${{ env.BASE }}-${{ env.BUILD_TAG }}.intoto.jsonl
+          # Extract Provenance
+          docker buildx imagetools inspect $ref \
+            --format "{{ json .Provenance }}" > ./attestations/provenance-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
 
       - name: Upload attestations
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
