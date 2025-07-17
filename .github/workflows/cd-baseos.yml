@@ -46,14 +46,14 @@ jobs:
             fi
           done
           
-          # Convert to JSON array for matrix
           if [ ${#tested_images[@]} -eq 0 ]; then
             echo "❌ No tested images found. CD will not run."
+            echo "images=[]" >> $GITHUB_OUTPUT
+          else
+            images_json=$(printf '%s\n' "${tested_images[@]}" | jq -R . | jq -s .)
+            echo "images=$images_json" >> $GITHUB_OUTPUT
+            echo "::notice:: Will promote ${#tested_images[@]} tested images: ${tested_images[*]}"
           fi
-          
-          images_json=$(printf '%s\n' "${tested_images[@]}" | jq -R . | jq -s .)
-          echo "images=$images_json" >> $GITHUB_OUTPUT
-          echo "::notice:: Will promote ${#tested_images[@]} tested images: ${tested_images[*]}"
 
   promote-publish:
     needs: discover-tested-images
