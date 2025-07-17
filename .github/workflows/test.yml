@@ -240,6 +240,10 @@ jobs:
       # 7) Extract and upload attestation artifacts (SBOM and provenance)
       # -----------------------------------------------------------------------------------------------
       - name: Extract attestations
+        env:
+          COSIGN_EXPERIMENTAL: 1
+          DIGEST: ${{ steps.push_remote.outputs.digest }}
+        shell: bash      
         run: |
           set -euo pipefail
           mkdir -p ./attestations
@@ -250,14 +254,6 @@ jobs:
 
           echo "⬇️ Downloading provenance..."
           cosign download attestation "$ref" > ./attestations/provenance-${{ env.BASE }}-${{ env.BUILD_TAG }}.intoto.jsonl
-
-          # # Extract SBOM
-          # docker buildx imagetools inspect ${{ env.IMAGE }}:${{ env.BUILD_TAG }} \
-          # --format "{{ json .SBOM }}" > ./attestations/sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.spdx.json
-
-          # # Extract Provenance
-          # docker buildx imagetools inspect ${{ env.IMAGE }}:${{ env.BUILD_TAG }} \
-          #   --format "{{ json .Provenance }}" > ./attestations/provenance-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
 
       - name: Upload attestations
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
