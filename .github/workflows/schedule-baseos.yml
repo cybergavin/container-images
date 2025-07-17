@@ -135,18 +135,18 @@ jobs:
 
       - name: Extract and Store SBOM
         run: |
-          docker buildx imagetools inspect ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} --format "{{ json .SBOM }}" > sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
+          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ env.BUILD_TAG }} --format "{{ json .SBOM }}" > sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
 
 
       - name: Test Image Functionality
         shell: bash
         run: |
           set -euo pipefail
-          echo "Starting testing for container image ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }}"
+          echo "Starting testing for container image ${{ env.IMAGE }}:${{ env.BUILD_TAG }}"
 
           # Test container startup
           echo "::group::Container Startup Test"
-          if output=$(docker run --rm ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} echo "Container startup test passed" 2>&1); then
+          if output=$(docker run --rm ${{ env.IMAGE }}:${{ env.BUILD_TAG }} echo "Container startup test passed" 2>&1); then
             echo "::notice:: SUCCESS: Container startup test passed"
             echo "Output: $output"
           fi
@@ -155,13 +155,13 @@ jobs:
           # Test upgrade functionality - should not be allowed
           echo "::group::Upgrade Test"
           case "${{ env.BASE }}" in
-            amazonlinux|almalinux) if docker run --rm ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} microdnf upgrade -y; then
+            amazonlinux|almalinux) if docker run --rm ${{ env.IMAGE }}:${{ env.BUILD_TAG }} microdnf upgrade -y; then
                                       echo "::error:: FAILURE: Upgrade test should have failed, but passed"
                                       exit 1
                                     else
                                       echo "::notice:: SUCCESS: Upgrade test correctly failed"
                                     fi ;;
-            alpine|wolfi) if docker run --rm ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} apk upgrade; then
+            alpine|wolfi) if docker run --rm ${{ env.IMAGE }}:${{ env.BUILD_TAG }} apk upgrade; then
                       echo "::error:: FAILURE: Upgrade test should have failed, but passed"
                       exit 1
                     else
@@ -172,7 +172,7 @@ jobs:
 
           # Test existence of appuser
           echo "::group::App User Test"
-          if docker run --rm ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} id appuser &>/dev/null; then
+          if docker run --rm ${{ env.IMAGE }}:${{ env.BUILD_TAG }} id appuser &>/dev/null; then
             echo "::notice:: SUCCESS: App user exists"
           fi
           echo "::endgroup::"
@@ -181,7 +181,7 @@ jobs:
       - name: Scan with Trivy
         uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
         with:
-          image-ref: ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }}
+          image-ref: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
           format: json
           output: trivy-${{ env.BASE }}.json
           ignore-unfixed: true
