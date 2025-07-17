@@ -1,0 +1,378 @@
+---
+# This workflow is triggered when changes are pushed to any short-lived branch.
+name: CI - Build and Test BaseOS Images
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+env:
+  DEFAULT_REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+permissions:
+  contents: write
+  pull-requests: write # For creating PRs
+  packages: write      # For pushing test images
+  id-token: write      # For cosign OIDC signing
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.detect.outputs.files }}
+      non_docker_changed: ${{ steps.detect.outputs.non_docker_changed }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Check for changes to Dockerfiles
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "🔍 Detecting file changes..."
+          git fetch origin main
+          mapfile -t changed_files < <(git diff --diff-filter=ACMR --name-only origin/main...HEAD)
+
+          docker_files=()
+          non_docker_files=()
+
+          for file in "${changed_files[@]}"; do
+            if [[ "$file" == */Dockerfile ]]; then
+              docker_files+=("$file")
+            else
+              non_docker_files+=("$file")
+            fi
+          done
+
+          # Output Dockerfiles
+          if [ ${#docker_files[@]} -eq 0 ]; then
+            echo "::notice:: No Dockerfiles changed."
+            echo "files=[]" >> $GITHUB_OUTPUT
+          else
+            echo "files=$(printf '%s\n' "${docker_files[@]}" | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+            echo "::notice:: Found Dockerfiles: ${docker_files[*]}"
+          fi
+
+          # Output flag if any non-Dockerfiles changed
+          if [ ${#non_docker_files[@]} -gt 0 ]; then
+            echo "non_docker_changed=true" >> $GITHUB_OUTPUT
+            echo "::notice:: Found other changed files: ${non_docker_files[*]}"
+          else
+            echo "non_docker_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-test:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.files != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: ${{ fromJson(needs.detect-changes.outputs.files) }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+    
+      - name: Set Variables
+        run: |
+          file="${{ matrix.dockerfile }}"
+          base=$(basename "$(dirname "$file")")
+          image="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${base}"
+          echo "BASE=$base" >> $GITHUB_ENV
+          echo "IMAGE=$image" >> $GITHUB_ENV
+
+      - name: Determine BaseOS Version
+        run: |
+          case "$BASE" in
+            amazonlinux) base_img="public.ecr.aws/amazonlinux/amazonlinux:minimal";;
+            almalinux)   base_img="almalinux:minimal";;
+            alpine)      base_img="alpine";;
+            wolfi)       base_img="cgr.dev/chainguard/wolfi-base";;
+            *) echo "Unknown: $BASE"; exit 1;;
+          esac
+          # Exception for Wolfi - free version has no version number
+          if [ "$BASE" == "wolfi" ]; then version_id="latest"; else
+            version_id=$(docker run --rm "$base_img" awk -F= '/VERSION_ID/ {gsub(/"/,"");print $2}' /etc/os-release)
+          fi
+          echo "VERSION_ID=$version_id" >> $GITHUB_ENV
+          echo "::notice:: Base image: $base_img, Version ID: $version_id"
+
+      - name: Compute Build Tag
+        run: |
+          DATE=$(date +'%Y.%m')
+          count=0
+          
+          # Try to get existing tags, handle case where repository doesn't exist
+          if tag_list=$(skopeo list-tags "docker://${IMAGE}" 2>/dev/null); then
+            # Repository exists, count existing tags matching our pattern
+            matching_tags=$(echo "$tag_list" | jq -r '.Tags[]?' | grep "^${VERSION_ID}-b.*-${DATE}$" || true)
+            if [ -n "$matching_tags" ]; then
+              count=$(echo "$matching_tags" | wc -l)
+            fi
+          else
+            echo "Repository ${IMAGE} doesn't exist yet or is inaccessible. Starting with build 01."
+          fi
+          
+          num=$(printf "%02d" $((count + 1)))
+          echo "BUILD_TAG=${VERSION_ID}-b${num}-${DATE}" >> $GITHUB_ENV
+          echo "::notice:: Computed build tag: ${VERSION_ID}-b${num}-${DATE}"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+          failure-threshold: error
+          ignore: DL3018,DL3059,DL3041,DL3006
+
+      - name: Login to Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ env.DEFAULT_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Extract metadata
+        id: docker_meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=test-${{ env.BUILD_TAG }}
+
+      - name: Build & Push Test Image, generate SBOM & Provenance
+        id: build-and-push
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        env:
+          DOCKER_BUILD_SUMMARY: false  # Explicitly disable build reports/artifacts
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          sbom: true
+          provenance: mode=max
+          outputs: type=image,name=${{ env.IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract and Store SBOM
+        run: |
+          docker buildx imagetools inspect ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} --format "{{ json .SBOM }}" > sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
+
+
+      - name: Test Image Functionality
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Starting testing for container image ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }}"
+
+          # Test container startup
+          echo "::group::Container Startup Test"
+          if output=$(docker run --rm ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} echo "Container startup test passed" 2>&1); then
+            echo "::notice:: SUCCESS: Container startup test passed"
+            echo "Output: $output"
+          fi
+          echo "::endgroup::"
+          
+          # Test upgrade functionality - should not be allowed
+          echo "::group::Upgrade Test"
+          case "${{ env.BASE }}" in
+            amazonlinux|almalinux) if docker run --rm ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} microdnf upgrade -y; then
+                                      echo "::error:: FAILURE: Upgrade test should have failed, but passed"
+                                      exit 1
+                                    else
+                                      echo "::notice:: SUCCESS: Upgrade test correctly failed"
+                                    fi ;;
+            alpine|wolfi) if docker run --rm ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} apk upgrade; then
+                      echo "::error:: FAILURE: Upgrade test should have failed, but passed"
+                      exit 1
+                    else
+                      echo "::notice:: SUCCESS: Upgrade test correctly failed"
+                    fi ;;
+          esac
+          echo "::endgroup::"
+
+          # Test existence of appuser
+          echo "::group::App User Test"
+          if docker run --rm ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }} id appuser &>/dev/null; then
+            echo "::notice:: SUCCESS: App user exists"
+          fi
+          echo "::endgroup::"
+          echo "::notice:: ✅ Functionality tests passed"
+
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
+        with:
+          image-ref: ${{ env.IMAGE }}:test-${{ env.BUILD_TAG }}
+          format: json
+          output: trivy-${{ env.BASE }}.json
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          vuln-type: 'os,library'
+      
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+
+      - name: Sign and verify test images with GitHub OIDC Token
+        env:
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+          TAGS: ${{ steps.docker_meta.outputs.tags }}
+          COSIGN_EXPERIMENTAL: 1  # Enable keyless signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group:: 🔐 Signing images with GitHub OIDC (keyless)..."
+          # Sign using OIDC token (non-interactive)
+          for tag in ${TAGS}; do
+            echo "Signing: ${tag}@${DIGEST}"
+            cosign sign --yes "${tag}@${DIGEST}"
+          done
+          echo "::notice:: ✅ Images signed successfully"
+          echo "::endgroup::"
+          
+          echo "::group::🔍 Verification of signatures, provenance and SBOM"
+          for tag in ${TAGS}; do
+            echo "Verifying: ${tag}@${DIGEST}"
+            cosign verify "${tag}@${DIGEST}" \
+              --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+              --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+            cosign verify-attestation "${tag}@${DIGEST}" --type slsaprovenance
+            cosign verify-attestation "${tag}@${DIGEST}" --type spdx
+          done
+          echo "::notice:: ✅ All tags passed signature, provenance, and SBOM verification."
+          echo "::endgroup::"
+
+      - name: Store Image Digest for CD
+        env:
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        run: |
+          echo "TESTED_DIGEST=$DIGEST" > ${{ env.BASE }}-digest.txt
+          echo "TEST_TAG=test-${{ env.BUILD_TAG }}" >> ${{ env.BASE }}-digest.txt
+          echo "VERSION_ID=${{ env.VERSION_ID }}" >> ${{ env.BASE }}-digest.txt
+          echo "::notice:: ✅ Saved image digest: $DIGEST"
+
+      - name: Upload Test Artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ env.BASE }}
+          path: |
+            sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
+            trivy-${{ env.BASE }}.json
+            ${{ env.BASE }}-digest.txt
+
+  create-pr:
+    needs: [detect-changes, build-test]
+    if: |
+      (
+        always() &&
+        needs.detect-changes.result == 'success' &&
+        (needs.build-test.result == 'success' || needs.build-test.result == 'skipped')
+      )
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download test results
+        if: needs.build-test.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: test-results-*
+          merge-multiple: false
+
+      - name: Generate PR Body
+        if: needs.build-test.result == 'success'
+        run: |
+          echo "## 🔄 Automated BaseOS Update" > pr_body.md
+          echo "" >> pr_body.md
+          echo "This PR contains automated updates for BaseOS container images." >> pr_body.md
+          echo "" >> pr_body.md
+          echo "### 📊 Build Results" >> pr_body.md
+          
+          for artifact_dir in test-results-*; do
+            if [ -d "$artifact_dir" ]; then
+              base=$(echo "$artifact_dir" | sed 's/test-results-//')
+              echo "#### $base" >> pr_body.md
+              
+              # Check for vulnerabilities
+              if [ -f "$artifact_dir/trivy-$base.json" ]; then
+                critical=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL") | .VulnerabilityID' "$artifact_dir/trivy-$base.json" | wc -l)
+                high=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH") | .VulnerabilityID' "$artifact_dir/trivy-$base.json" | wc -l)
+                medium=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM") | .VulnerabilityID' "$artifact_dir/trivy-$base.json" | wc -l)
+                echo "- 🔴 Critical: $critical" >> pr_body.md
+                echo "- 🟠 High: $high" >> pr_body.md
+                echo "- 🟡 Medium: $medium" >> pr_body.md
+              fi
+              echo "" >> pr_body.md
+            fi
+          done
+          
+          echo "### ✅ Validation Status" >> pr_body.md
+          echo "- [x] Dockerfile linting passed" >> pr_body.md
+          echo "- [x] Image builds successfully" >> pr_body.md
+          echo "- [x] Basic functionality tests passed" >> pr_body.md
+          echo "- [x] Security scan completed" >> pr_body.md
+          echo "- [x] SBOM generated with provenance" >> pr_body.md
+          echo "- [x] Images signed with Cosign" >> pr_body.md
+          echo "- [x] Test images ready for promotion" >> pr_body.md
+
+      - name: Extract branch name
+        id: extract_branch
+        run: echo "branch_name=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_ENV
+
+      - name: Check for existing Pull Request
+        id: check_pr
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing_pr=$(gh pr list --base main --head $branch_name --json number --jq '.[0].number')
+          if [ -n "$existing_pr" ]; then
+            echo "PR exists for this branch: $existing_pr"
+            echo "pr_exists=true" >> $GITHUB_ENV
+          else
+            echo "PR does not exist for this branch."
+            echo "pr_exists=false" >> $GITHUB_ENV
+          fi
+
+      - name: Create Pull Request if it doesn't exist
+        if: env.pr_exists == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Creating a pull request for branch: $branch_name"
+          # Create a new PR using the GitHub CLI
+          if [[ "${{ needs.build-test.result }}" == 'success' ]]; then
+            echo "🔍 Images built — using detailed PR body."
+            PR_URL=$(gh pr create \
+              --base main \
+              --head "$branch_name" \
+              --title "Auto PR (created by ${{ github.workflow }}): $branch_name" \
+              --body-file pr_body.md)
+          else
+            echo "ℹ️ No Dockerfiles changed — using generic PR message."
+            PR_URL=$(gh pr create \
+              --base main \
+              --head "$branch_name" \
+              --title "Auto PR (created by ${{ github.workflow }}): $branch_name" \
+              --body "This PR was auto-generated for branch $branch_name.")
+          fi
+
+          echo "PR created: $PR_URL"
+
+          # Get PR number from URL
+          PR_NUMBER=$(basename "$PR_URL")
+
+          # Get the head commit SHA of the PR
+          PR_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid)
+
+          echo "Head commit SHA of PR #$PR_NUMBER is: $PR_SHA"

@@ -1,0 +1,197 @@
+---
+name: CD - Build and Publish BaseOS Images
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write      # For creating GitHub releases  
+  packages: write      # For promoting images
+  id-token: write      # For cosign OIDC verification
+  attestations: write  # For SBOM attachments
+
+env:
+  DEFAULT_REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+jobs:
+  discover-tested-images:
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.find-artifacts.outputs.images }}
+    steps:
+      - name: Download All CI Artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        
+      - name: Find Successfully Tested Images
+        id: find-artifacts
+        run: |
+          echo "🔍 Discovering images that passed CI testing..."
+          
+          # Find all test-results-* artifacts (these are what CI produced)
+          tested_images=()
+          for artifact_dir in test-results-*; do
+            if [ -d "$artifact_dir" ]; then
+              # Extract base image name from artifact directory
+              base=$(echo "$artifact_dir" | sed 's/test-results-//')
+              
+              # Verify the artifact has a digest file (successful CI build)
+              if [ -f "$artifact_dir/$base-digest.txt" ]; then
+                tested_images+=("$base")
+                echo "✅ Found tested image: $base"
+              else
+                echo "⚠️  Skipping $base (no digest found - CI may have failed)"
+              fi
+            fi
+          done
+          
+          # Convert to JSON array for matrix
+          if [ ${#tested_images[@]} -eq 0 ]; then
+            echo "❌ No tested images found. CI must run successfully first."
+            exit 1
+          fi
+          
+          images_json=$(printf '%s\n' "${tested_images[@]}" | jq -R . | jq -s .)
+          echo "images=$images_json" >> $GITHUB_OUTPUT
+          echo "::notice:: Will promote ${#tested_images[@]} tested images: ${tested_images[*]}"
+
+  promote-publish:
+    needs: discover-tested-images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        base: ${{ fromJson(needs.discover-tested-images.outputs.images) }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Set Variables
+        run: |
+          base="${{ matrix.base }}"
+          image="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${base}"
+          echo "BASE=$base" >> $GITHUB_ENV
+          echo "IMAGE=$image" >> $GITHUB_ENV
+
+      - name: Download CI Test Results
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: test-results-${{ env.BASE }}
+          path: ./artifacts
+        continue-on-error: true
+
+      - name: Load Tested Image Info
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f "./artifacts/${{ env.BASE }}-digest.txt" ]; then
+            echo "❌ No tested image found for ${{ env.BASE }}."
+            echo "🔄 CI pipeline must complete successfully before CD can run."
+            echo "Either run CI workflow first, or trigger this workflow with workflow_dispatch after CI completes."
+          fi
+          
+          source ./artifacts/${{ env.BASE }}-digest.txt
+          echo "TESTED_DIGEST=$TESTED_DIGEST" >> $GITHUB_ENV
+          echo "TEST_TAG=$TEST_TAG" >> $GITHUB_ENV
+          echo "VERSION_ID=$VERSION_ID" >> $GITHUB_ENV
+          
+          # Extract the build tag from test tag (remove 'test-' prefix)
+          CI_BUILD_TAG=$(echo "$TEST_TAG" | sed 's/^test-//')
+          echo "PROD_TAG=$CI_BUILD_TAG" >> $GITHUB_ENV
+          
+          echo "✅ Found tested image: ${{ env.IMAGE }}@$TESTED_DIGEST"
+
+      - name: Login to Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ env.DEFAULT_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Promote Tested Image to Production
+        run: |
+          echo "🎯 Promoting tested image to production tags..."
+          
+          # Pull the exact tested image by digest (this is the same image that passed CI)
+          docker pull ${{ env.IMAGE }}@${{ env.TESTED_DIGEST }}
+          
+          # Create production tags pointing to the SAME image digest
+          # This doesn't copy the image - just creates new tags
+          docker tag ${{ env.IMAGE }}@${{ env.TESTED_DIGEST }} ${{ env.IMAGE }}:${{ env.PROD_TAG }}
+          docker tag ${{ env.IMAGE }}@${{ env.TESTED_DIGEST }} ${{ env.IMAGE }}:latest
+          
+          # Push the new production tags (pointing to same image)
+          docker push ${{ env.IMAGE }}:${{ env.PROD_TAG }}
+          docker push ${{ env.IMAGE }}:latest
+          
+          echo "::notice:: ✅ Production tags created:"
+          echo "   📦 ${{ env.IMAGE }}:${{ env.PROD_TAG }} → ${{ env.TESTED_DIGEST }}"
+          echo "   📦 ${{ env.IMAGE }}:latest → ${{ env.TESTED_DIGEST }}"
+          echo ""
+          echo "🧹 Test tag still exists but will be cleaned up:"
+          echo "   🧪 ${{ env.IMAGE }}:${{ env.TEST_TAG }} → ${{ env.TESTED_DIGEST }}"
+    
+      - name: Upload SBOM as Artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-${{ env.BASE }}-${{ env.PROD_TAG }}
+          path: ./artifacts/sbom-${{ env.BASE }}-${{ env.PROD_TAG }}.json
+
+      - name: Final Security Verification
+        uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ env.PROD_TAG }}
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          vuln-type: 'os,library'
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+
+      - name: Verify CI Signatures Still Valid
+        env:
+          COSIGN_EXPERIMENTAL: 1  # Enable keyless verification
+        run: |
+          echo "🔍 Verifying CI signatures are present on promoted image..."
+          
+          # Verify the image was properly signed in CI
+          cosign verify ${{ env.IMAGE }}@${{ env.TESTED_DIGEST }} \
+            --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+          
+          echo "✅ CI signatures verified - same signatures apply to production tags"
+          
+          # Verify production tags also show as signed (same digest = same signatures)
+          echo "🔍 Verifying production tags inherit the signatures..."
+          cosign verify ${{ env.IMAGE }}:${{ env.PROD_TAG }} \
+            --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+          
+          cosign verify ${{ env.IMAGE }}:latest \
+            --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+          
+          echo "::notice:: ✅ All tags verified - signatures properly inherited from CI"
+
+      - name: Clean up test tags
+        run: |
+          echo "🧹 Cleaning up test tag: ${{ env.TEST_TAG }}"
+
+          # Check if test tag exists
+          if skopeo inspect docker://${{ env.IMAGE }}:${{ env.TEST_TAG }} > /dev/null 2>&1; then
+            # Delete test tag using skopeo
+            skopeo delete docker://${{ env.IMAGE }}:${{ env.TEST_TAG }}
+            echo "✅ Removed test tag: ${{ env.TEST_TAG }}"
+          else
+            echo "ℹ️  Test tag not found or already removed"
+          fi
+          
+          echo "::notice:: ✅ Registry cleanup completed"
+          echo "📦 Production tags available:"
+          echo "   ${{ env.IMAGE }}:${{ env.PROD_TAG }}"
+          echo "   ${{ env.IMAGE }}:latest"
