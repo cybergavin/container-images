@@ -114,6 +114,8 @@ jobs:
       - name: Build (LOCAL ONLY) with Buildx
         id: build_local
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83  # v6.18.0
+        env:
+          DOCKER_BUILD_SUMMARY: false  # Explicitly disable build reports/artifacts        
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -173,6 +175,8 @@ jobs:
         id: push_remote
         if: success()     # <-- guard: only runs if every previous step succeeded
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83  # v6.18.0
+        env:
+          DOCKER_BUILD_SUMMARY: false  # Explicitly disable build reports/artifacts        
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -184,7 +188,9 @@ jobs:
           provenance: mode=max
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          outputs: type=local,dest=./artifacts
+          outputs: |
+            type=sbom,dest=./attestations/sbom
+            type=provenance,dest=./attestations/provenance
 
       # ──────────────────────────────────────────────────────────────────────────────
       # 6) Upload attestation artifacts (SBOM and provenance)
@@ -193,7 +199,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: attestations
-          path: ./artifacts
+          path: ./attestations
 
       # ──────────────────────────────────────────────────────────────────────────────
       # 7) Cosign sign & verify the **remote** image
