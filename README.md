@@ -2,6 +2,16 @@
 
 A secure, hardened collection of minimal base container images for platform engineering and application deployment. This repository provides standardized base images across multiple Linux distributions with built-in security controls and supply chain attestations.
 
+## Available Images
+
+| Base Image       | Description                                                           | Size      | libc    | Package Manager   | Security Posture                     | Optimal Use Cases                                                                                       |
+| ---------------- | --------------------------------------------------------------------- | --------- | ------- | ----------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| **AlmaLinux Minimal**    | RHEL-compatible, stable, enterprise-grade distro                      | 🟨 Medium | `glibc` | `microdnf`             | CVE-patched, slower cadence          | - Legacy enterprise apps<br>- Python/C apps expecting RHEL<br>- Compliance-required workloads           |
+| **Alpine**       | Minimalist, musl-based, widely used in container environments         | 🟩 Tiny   | `musl`  | `apk`             | Frequent updates, fast CVE patching  | - Scratch-like microservices<br>- Fast CI/CD<br>- Static Go/Rust apps             |
+| **Amazon Linux Minimal** | AWS-optimized distro with tight EC2/ECS/Lambda integration            | 🟨 Medium | `glibc` | `microdnf`       | AWS-patched, fast sync with AWS CVEs | - AWS-hosted apps<br>- Lambda container images<br>- EKS/ECS-optimized workloads                         |
+| **Wolfi**        | Hardened, minimal, `glibc`-based with apk-like `melange`/`apko` build | 🟦 Tiny   | `glibc` | `melange` + `apk` | SBOM-native, hardened by default     | - Zero CVE base images<br>- LLM apps<br>- SLSA-compliant builds<br>- Multi-arch distroless-style images |
+
+
 ## Image Specifications
 
 ### Common Features
@@ -24,13 +34,6 @@ microdnf upgrade -y              # ❌ Blocked by guardrails
 ```
 
 The wrapper scripts display clear error messages directing users to contact platform teams for upgrade requests.
-
-## Available Images
-
-- **AlmaLinux** - Enterprise-grade RHEL-compatible base
-- **Alpine** - Minimal, security-focused musl-based distribution  
-- **Amazon Linux** - AWS-optimized distribution
-- **Wolfi** - Distroless-style base with glibc and package manager
 
 ## Features
 
