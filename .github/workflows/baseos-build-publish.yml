@@ -161,10 +161,11 @@ jobs:
         with:
           image-ref: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
           ignore-unfixed: true
-          severity: CRITICAL,HIGH,MEDIUM
+          severity: CRITICAL,HIGH
           vuln-type: os,library
           format: json
           output: trivy-results.json
+          exit-code: 1  # Fail the job if vulnerabilities found
 
       - name: Add formatted results to summary
         run: |
