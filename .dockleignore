@@ -1,6 +1,0 @@
-# Not using latest, but VERSION_ID variable 
-DKL-DI-0006
-# doesn't need HEALTHCHECK for baseOS image
-CIS-DI-0006
-# Using cosign and avoiding DOCKER_CONTENT_TRUST 
-CIS-DI-0005

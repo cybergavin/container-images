@@ -14,7 +14,8 @@ FROM ${BASE_IMAGE}
 LABEL cg.image.maintainer="cybergavin" \
       cg.image.description="Validated AmazonLinux base OS image with essential tools" \
       cg.image.support="cybergavin@gmail.com" \
-      org.opencontainers.image.source="https://github.com/cybergavin/container-images"
+      org.opencontainers.image.source="https://github.com/cybergavin/container-images" \
+      org.opencontainers.image.description="Validated AmazonLinux base OS image with essential tools"
 
 # Install essential tools and clean cache
 RUN microdnf update -y && microdnf install -y --nodocs \
