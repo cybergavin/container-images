@@ -75,7 +75,7 @@ docker run --user appuser ghcr.io/cybergavin/alpine:latest
 ### Dockerfile Example
 
 ```dockerfile
-FROM ghcr.io/cybergavin/alpine:latest
+FROM ghcr.io/cybergavin/alpine:3.22.1-b01-2025.07
 
 # Switch to root to install packages
 USER root
