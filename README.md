@@ -78,18 +78,25 @@ FROM ghcr.io/cybergavin/alpine:latest
 USER root
 RUN apk add --no-cache python3 py3-pip
 
-# Drop privileges to pre-provisioned appuser (UID 1001)
+# Create a venv owned by appuser
+RUN python3 -m venv /opt/venv && \
+    chown -R appuser:appgroup /opt/venv
+
+# Drop privileges
 USER appuser
 WORKDIR /app
 
-# Copy files to /app and set ownership
+# Use venv by default
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy app files
 COPY --chown=appuser:appgroup . .
 
-# Install Python dependencies (pip runs as non-root inside /home/appuser/.cache)
-RUN pip install --no-cache-dir --user -r requirements.txt
+# Install Python deps into the venv
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Run your application
-CMD ["python3", "app.py"]
+# Run your app (replace with your actual app)
+CMD ["python", "app.py"]
 
 ```
 
