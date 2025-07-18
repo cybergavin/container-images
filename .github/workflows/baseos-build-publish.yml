@@ -165,7 +165,6 @@ jobs:
           vuln-type: os,library
           format: json
           output: trivy-results.json
-          exit-code: 1  # Fail the job if vulnerabilities found
 
       - name: Add formatted results to summary
         run: |
@@ -184,6 +183,13 @@ jobs:
           echo "| 🔴 Critical | $CRITICAL |" >> $GITHUB_STEP_SUMMARY
           echo "| 🟠 High | $HIGH |" >> $GITHUB_STEP_SUMMARY
           echo "| 🟡 Medium | $MEDIUM |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "::error title=Trivy scan failed::Found $CRITICAL CRITICAL and $HIGH HIGH vulnerabilities"
+            exit 1
+          else
+            echo "::notice:: No critical or high vulnerabilities found"
+          fi
 
       # -----------------------------------------------------------------------------------------------
       # 5) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
