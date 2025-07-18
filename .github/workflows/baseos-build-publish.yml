@@ -71,7 +71,7 @@ jobs:
           set -euo pipefail
           case "$BASE" in
             amazonlinux) base_img="public.ecr.aws/amazonlinux/amazonlinux:minimal";;
-            almalinux)   base_img="almalinux:9.4-minimal";;
+            almalinux)   base_img="almalinux:minimal";;
             alpine)      base_img="alpine";;
             wolfi)       base_img="cgr.dev/chainguard/wolfi-base";;
             *) echo "Unknown base '$BASE'"; exit 1;;

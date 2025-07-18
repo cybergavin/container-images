@@ -18,7 +18,7 @@ LABEL cg.image.maintainer="cybergavin" \
       org.opencontainers.image.description="Validated Almalinux base OS image with essential tools"
 
 # Install essential tools and clean cache
-RUN microdnf install -y --nodocs \
+RUN microdnf update -y && microdnf install -y --nodocs \
     openssl \
     jq \
     unzip \
