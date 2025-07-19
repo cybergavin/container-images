@@ -138,25 +138,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          img="${{ env.IMAGE }}:${{ env.BUILD_TAG }}"
-          echo "Testing $img"
+          IMAGE_REF="${{ env.IMAGE }}:${{ env.BUILD_TAG }}"
+          echo "Testing $IMAGE_REF"
 
-          docker run --rm "$img" echo "Container startup test passed" >/dev/null
+          docker run --rm "$IMAGE_REF" echo "Container startup test passed" >/dev/null
           echo "::notice:: Startup check passed"
 
           # Upgrade prevention check
           case "$BASE" in
             amazonlinux|almalinux)
-              ! docker run --rm "$img" microdnf upgrade -y
+              ! docker run --rm "$IMAGE_REF" microdnf upgrade -y
             ;;
             alpine|wolfi)
-              ! docker run --rm "$img" apk upgrade
+              ! docker run --rm "$IMAGE_REF" apk upgrade
             ;;
           esac
           echo "::notice:: Upgrade test passed"
 
           # appuser check
-          docker run --rm "$img" id appuser >/dev/null
+          docker run --rm "$IMAGE_REF" id appuser >/dev/null
           echo "::notice:: appuser exists"
           echo "::notice:: ✅ Functional tests passed"
 
@@ -170,30 +170,48 @@ jobs:
           format: json
           output: trivy-results.json
 
-      - name: Add formatted results to summary
+      - name: Generate Trivy + Image Size Markdown Report
+        env:
+          REPORT_FILE: "${{ env.IMAGE }}-TrivyScanReport.md"
         run: |
-          echo "## 🔍 Trivy Security Scan Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Image: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Count vulnerabilities by severity
-          CRITICAL=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL") | .VulnerabilityID' trivy-results.json | wc -l)
-          HIGH=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH") | .VulnerabilityID' trivy-results.json | wc -l)
-          MEDIUM=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM") | .VulnerabilityID' trivy-results.json | wc -l)
-          
-          echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔴 Critical | $CRITICAL |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🟠 High | $HIGH |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🟡 Medium | $MEDIUM |" >> $GITHUB_STEP_SUMMARY
+          IMAGE_REF=docker://${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+          echo "Inspecting image: $IMAGE_REF"
 
+          # Get vulnerability counts from Trivy JSON
+          CRITICAL=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")' trivy-results.json | wc -l)
+          HIGH=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")' trivy-results.json | wc -l)
+          MEDIUM=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")' trivy-results.json | wc -l)
+
+          # Get compressed size (sum of LayersData[].Size)
+          COMPRESSED=$(skopeo inspect "$IMAGE_REF" | jq '[.LayersData[].Size] | add | numfmt --to=iec --suffix=B')
+
+          {
+            echo "## 🔍 Trivy Security Scan Results"
+            echo ""    
+            echo "### Image: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}"
+            echo "### 📦 Compressed Image Size: $COMPRESSED"
+            echo ""         
+            echo "| Severity | Count |"
+            echo "|----------|-------|"
+            echo "| 🔴 Critical | $CRITICAL |"
+            echo "| 🟠 High     | $HIGH     |"
+            echo "| 🟡 Medium   | $MEDIUM   |"
+            echo ""
+          } | tee -a "$GITHUB_STEP_SUMMARY" "$REPORT_FILE" > /dev/null
+
+          # Exit if any critical or high vulnerabilities
           if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
             echo "::error title=Trivy scan failed::Found $CRITICAL CRITICAL and $HIGH HIGH vulnerabilities"
             exit 1
           else
             echo "::notice:: No critical or high vulnerabilities found"
           fi
+
+      - name: Upload Build Report Artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ env.IMAGE }}-build-report
+          path: ${{ env.IMAGE }}-buildReport.md
 
       # -----------------------------------------------------------------------------------------------
       # 5) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
