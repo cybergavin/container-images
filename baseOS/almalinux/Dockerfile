@@ -1,12 +1,12 @@
-#------------------------------------------------------------------------------------------
-# Dockerfile for Almalinux Base OS Image
-# Maintainer: cybergavin
-# Description: A validated Almalinux minimal base OS image with essential tools
-#------------------------------------------------------------------------------------------
+# ============================================================================================
+# Copyright (c) 2025 Cybergavin (https://github.com/cybergavin/container-images) - MIT License
+# See the LICENSE file in the root of this repository for full license details.
+# ============================================================================================
 # Do not override the default base image
-# The value of BASE_IMAGE is set in the GitHub Actions workflow
-# to ensure consistency across builds and tests.
+# The value of BASE_IMAGE is set in the GitHub Actions workflow to ensure consistency across builds and tests.
 # If you need to change the base image, update the workflow file instead.
+
+# Set the base image
 ARG BASE_IMAGE=almalinux:minimal
 FROM ${BASE_IMAGE}
 
