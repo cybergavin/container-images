@@ -1,4 +1,8 @@
 ---
+# ============================================================================================
+# Copyright (c) 2025 Cybergavin (https://github.com/cybergavin/container-images) - MIT License
+# See the LICENSE file in the root of this repository for full license details.
+# ============================================================================================
 # This workflow may be triggered by a schedule or manually, to rebuild and publish baseOS container images
 name: Build and Publish BaseOS Images
 
