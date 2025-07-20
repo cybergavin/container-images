@@ -1,8 +1,8 @@
-# BaseOS Container Images
+## BaseOS Container Images
 
 A secure, hardened collection of minimal base container images for platform engineering and application deployment. This repository provides standardized base images across multiple Linux distributions with built-in security controls and supply chain attestations.
 
-## Available Images
+### Available Images
 
 | Base Image       | Description                                                           | Size      | libc    | Package Manager   | Security Posture                     | Optimal Use Cases                                                                                       |
 | ---------------- | --------------------------------------------------------------------- | --------- | ------- | ----------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
@@ -11,8 +11,7 @@ A secure, hardened collection of minimal base container images for platform engi
 | **Amazon Linux Minimal** | AWS-optimized distro with tight EC2/ECS/Lambda integration            | 🟨 Medium | `glibc` | `microdnf`       | AWS-patched, fast sync with AWS CVEs | - AWS-hosted apps<br>- Lambda container images<br>- EKS/ECS-optimized workloads                         |
 | **Wolfi**        | Hardened, minimal, `glibc`-based with apk-like `melange`/`apko` build | 🟦 Tiny   | `glibc` | `melange` + `apk` | SBOM-native, hardened by default     | - Zero CVE base images<br>- LLM apps<br>- SLSA-compliant builds<br>- Multi-arch distroless-style images |
 
-
-## Image Specifications
+---
 
 ### Common Features
 All baseOS images include:
@@ -21,6 +20,8 @@ All baseOS images include:
 - **Working Directory**: `/app` with proper ownership
 - **Package Guardrails**: Wrapper scripts prevent `upgrade` commands
 - **Metadata Labels**: OpenContainers annotations for source and maintainer info
+
+---
 
 ### 🔒 Security Features
 
@@ -40,6 +41,8 @@ All baseOS images include:
 - **Cosign signing:** Images signed with keyless signing using GitHub OIDC
 - **Signature verification:** Automatic verification of image signatures post-build
 
+---
+
 ### 📋 Build Process
 
 #### Automated Triggers
@@ -56,6 +59,8 @@ All baseOS images include:
 - **Attestation:** SBOM and provenance attached to published images
 - **Signing:** Cosign keyless signing with GitHub OIDC
 
+---
+
 ### 📦 Image Tags
 - Images are published with versioning based on the base OS version:
 
@@ -69,6 +74,8 @@ All baseOS images include:
 `3.21-b01-2025.01` - Alpine 3.21, first build of January 2025
 
 - All images are also tagged as `latest`.
+
+---
 
 ### 🚀 Usage
 
@@ -122,6 +129,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 CMD ["python", "app.py"]
 
 ```
+---
 
 ### 🔍 Verification
 
@@ -141,6 +149,8 @@ cosign download sbom ghcr.io/cybergavin/alpine:latest
 # View provenance
 cosign download attestation ghcr.io/cybergavin/alpine:latest
 ```
+
+---
 
 ### 📊 Build Artifacts
 Each successful build generates the following artifacts:

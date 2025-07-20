@@ -234,7 +234,7 @@ jobs:
       - name: Upload Vulnerability Report Artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ${{ env.BASE }}-${{ env.BUILD_TAG }}-vulnerability-reports
+          name: vulnerability-reports-${{ env.BASE }}-${{ env.BUILD_TAG }}
           path: ${{ env.VULN_REPORTS_DIR }}
 
       # -----------------------------------------------------------------------------------------------
