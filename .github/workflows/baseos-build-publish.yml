@@ -184,6 +184,7 @@ jobs:
           GRYPE_REPORT=${VULN_REPORTS_DIR}/GrypeScanReport.html
           echo "TRIVY_REPORT=${TRIVY_REPORT}" >> "$GITHUB_ENV"
           echo "GRYPE_REPORT=${GRYPE_REPORT}" >> "$GITHUB_ENV"
+          echo "VULN_REPORTS_DIR=${VULN_REPORTS_DIR}" >> "$GITHUB_ENV"
 
           # Get vulnerability counts from Trivy JSON
           CRITICAL=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")' trivy-results.json | wc -l)
