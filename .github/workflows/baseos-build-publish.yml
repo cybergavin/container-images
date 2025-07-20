@@ -133,7 +133,7 @@ jobs:
           tags: ${{ env.LOCAL_IMAGE }} # Local tag for docker commands
 
       # -----------------------------------------------------------------------------------------------
-      # 4) Runtime tests & Trivy security scan run against the local image
+      # 4) Functional tests run against the local image
       #    Any failure here will abort the job before the image is published
       # -----------------------------------------------------------------------------------------------
       - name: Functional tests
@@ -162,6 +162,11 @@ jobs:
           echo "::endgroup::"
           echo "::notice:: ✅ Functional tests passed"
 
+      # -----------------------------------------------------------------------------------------------
+      # 5) Vulnerability scans run against the local image
+      #    Any failure in the Trivy scan will abort the job before the image is published
+      #    Grype scan results are collected but do not fail the build
+      # -----------------------------------------------------------------------------------------------
       - name: Trivy scan
         uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4  # v0.32.0
         with:
@@ -178,7 +183,7 @@ jobs:
           set -euo pipefail
 
           # Set up vulnerability scan report files
-          VULN_REPORTS_DIR=./vulnerability-reports/$BASE
+          VULN_REPORTS_DIR=./vulnerability-reports/${BASE}-${BUILD_TAG}
           mkdir -p "$VULN_REPORTS_DIR"
           TRIVY_REPORT=${VULN_REPORTS_DIR}/TrivyScanReport.md
           GRYPE_REPORT=${VULN_REPORTS_DIR}/GrypeScanReport.html
@@ -215,6 +220,10 @@ jobs:
             echo "::notice:: ✅ No critical or high vulnerabilities found"
           fi
 
+      - name: Grype scan for additional insights
+        shell: bash
+        run: |
+          set -eu
           # Generate Grype report (Grype results do not fail the build, but are used as supporting data)
           # Install Grype
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
@@ -229,7 +238,7 @@ jobs:
           path: ${{ env.VULN_REPORTS_DIR }}
 
       # -----------------------------------------------------------------------------------------------
-      # 5) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
+      # 6) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
       # -----------------------------------------------------------------------------------------------
       - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772  # v3.4.0
         with:
@@ -257,7 +266,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       # -----------------------------------------------------------------------------------------------
-      # 6) Cosign sign & verify the **remote** image
+      # 7) Cosign sign & verify the **remote** image
       # -----------------------------------------------------------------------------------------------
       - name: Install Cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
@@ -282,7 +291,7 @@ jobs:
           echo "::notice:: ✅ Image signed & verified successfully"
 
       # -----------------------------------------------------------------------------------------------
-      # 7) Extract and upload attestation artifacts (SBOM and provenance)
+      # 8) Extract and upload attestation artifacts (SBOM and provenance)
       # -----------------------------------------------------------------------------------------------
       - name: Extract attestations
         env:
