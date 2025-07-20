@@ -210,8 +210,8 @@ jobs:
       - name: Upload Build Report Artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ${{ env.IMAGE }}-build-report
-          path: ${{ env.IMAGE }}-buildReport.md
+          name: ${{ env.BASE }}-build-report
+          path: ${{ env.BASE }}-buildReport.md
 
       # -----------------------------------------------------------------------------------------------
       # 5) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
