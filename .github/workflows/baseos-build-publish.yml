@@ -140,10 +140,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "Testing $LOCAL_IMAGE"
+          echo "::group:: Testing $LOCAL_IMAGE"
 
           docker run --rm "$LOCAL_IMAGE" echo "Container startup test passed" >/dev/null
-          echo "::notice:: Startup check passed"
+          echo "Startup check passed"
 
           # Upgrade prevention check
           case "$BASE" in
@@ -154,11 +154,12 @@ jobs:
               ! docker run --rm "$LOCAL_IMAGE" apk upgrade
             ;;
           esac
-          echo "::notice:: Upgrade test passed"
+          echo "Upgrade test passed"
 
           # appuser check
           docker run --rm "$LOCAL_IMAGE" id appuser >/dev/null
-          echo "::notice:: appuser exists"
+          echo "appuser exists check passed"
+          echo "::endgroup::"
           echo "::notice:: ✅ Functional tests passed"
 
       - name: Trivy scan
@@ -171,25 +172,31 @@ jobs:
           format: json
           output: trivy-results.json
 
-      - name: Generate Trivy Report
-        env:
-          REPORT_FILE: ${{ env.BASE }}-TrivyScanReport.md
+      - name: Generate Vulnerability Reports
         shell: bash
         run: |
           set -euo pipefail
+
+          # Set up vulnerability scan report files
+          VULN_REPORTS_DIR=./vulnerability-reports/$BASE
+          mkdir -p "$VULN_REPORTS_DIR"
+          TRIVY_REPORT=${VULN_REPORTS_DIR}/TrivyScanReport.md
+          GRYPE_REPORT=${VULN_REPORTS_DIR}/GrypeScanReport.html
+          echo "TRIVY_REPORT=${TRIVY_REPORT}" >> "$GITHUB_ENV"
+          echo "GRYPE_REPORT=${GRYPE_REPORT}" >> "$GITHUB_ENV"
 
           # Get vulnerability counts from Trivy JSON
           CRITICAL=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")' trivy-results.json | wc -l)
           HIGH=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")' trivy-results.json | wc -l)
           MEDIUM=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")' trivy-results.json | wc -l)
 
-          # Get compressed size (sum of LayersData[].Size)
-          COMPRESSED=$(skopeo inspect "docker-daemon:${LOCAL_IMAGE}" | jq '[.LayersData[].Size] | add' | numfmt --to=iec --suffix=B)
+          # Get uncompressed size (sum of LayersData[].Size)
+          IMAGE_SIZE=$(skopeo inspect "docker-daemon:${LOCAL_IMAGE}" | jq '[.LayersData[].Size] | add' | numfmt --to=iec --suffix=B)
           {
             echo "## 🔍 Trivy Security Scan Results"
             echo ""    
             echo "### Image: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}"
-            echo "### 📦 Compressed Image Size: $COMPRESSED"
+            echo "### 📦 Uncompressed Image Size: $IMAGE_SIZE"
             echo ""         
             echo "| Severity | Count |"
             echo "|----------|-------|"
@@ -197,22 +204,28 @@ jobs:
             echo "| 🟠 High     | $HIGH     |"
             echo "| 🟡 Medium   | $MEDIUM   |"
             echo ""
-          } | tee -a "$GITHUB_STEP_SUMMARY" "$REPORT_FILE" > /dev/null
-          echo "REPORT_FILE=${BASE}-TrivyScanReport.md" >> "$GITHUB_ENV"
+          } | tee -a "$GITHUB_STEP_SUMMARY" "$TRIVY_REPORT" > /dev/null
 
           # Exit if any critical or high vulnerabilities
           if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
             echo "::error title=Trivy scan failed::Found $CRITICAL CRITICAL and $HIGH HIGH vulnerabilities"
             exit 1
           else
-            echo "::notice:: No critical or high vulnerabilities found"
+            echo "::notice:: ✅ No critical or high vulnerabilities found"
           fi
 
-      - name: Upload Build Report Artifact
+          # Generate Grype report (Grype results do not fail the build, but are used as supporting data)
+          # Install Grype
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+          # Run Grype scan
+          grype -o template -t ./templates/GrypeReport.tmpl $LOCAL_IMAGE > "$GRYPE_REPORT"
+
+      - name: Upload Vulnerability Report Artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ${{ env.BASE }}-build-report
-          path: ${{ env.REPORT_FILE }}
+          name: ${{ env.BASE }}-vulnerability-reports
+          path: ${VULN_REPORTS_DIR}
 
       # -----------------------------------------------------------------------------------------------
       # 5) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
@@ -256,13 +269,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ref="${{ env.IMAGE }}@${DIGEST}"
+          IMAGE_DIGEST="${{ env.IMAGE }}@${DIGEST}"
 
-          echo "🔐 Signing $ref"
-          cosign sign --yes "$ref"
+          echo "🔐 Signing $IMAGE_DIGEST"
+          cosign sign --yes "$IMAGE_DIGEST"
 
           echo "🔍 Verifying signature and attestations"
-          cosign verify "$ref" \
+          cosign verify "$IMAGE_DIGEST" \
             --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
             --certificate-oidc-issuer=https://token.actions.githubusercontent.com
           echo "::notice:: ✅ Image signed & verified successfully"
@@ -277,14 +290,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ./attestations
-          ref="${{ env.IMAGE }}@${DIGEST}"
+          IMAGE_DIGEST="${{ env.IMAGE }}@${DIGEST}"
           
           # Extract SBOM
-          docker buildx imagetools inspect $ref \
+          docker buildx imagetools inspect $IMAGE_DIGEST \
           --format "{{ json .SBOM }}" > ./attestations/sbom-${{ env.BASE }}-${{ env.BUILD_TAG }}.spdx.json
 
           # Extract Provenance
-          docker buildx imagetools inspect $ref \
+          docker buildx imagetools inspect $IMAGE_DIGEST \
             --format "{{ json .Provenance }}" > ./attestations/provenance-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
 
       - name: Upload attestations
