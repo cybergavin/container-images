@@ -102,6 +102,7 @@ jobs:
           fi
           num=$(printf "%02d" $((count + 1)))
           echo "BUILD_TAG=${VERSION_ID}-b${num}-${DATE}" >> $GITHUB_ENV
+          echo "LOCAL_IMAGE=${IMAGE}-local:${BUILD_TAG}" >> $GITHUB_ENV
           echo "::notice:: BUILD_TAG=${VERSION_ID}-b${num}-${DATE}"
 
       # -----------------------------------------------------------------------------------------------
@@ -128,7 +129,7 @@ jobs:
           build-args: BASE_IMAGE=${{ env.BASE_IMAGE }}
           load: true          # Load into docker‑daemon, not pushed
           push: false
-          tags: ${{ env.BASE }}-local:${{ env.BUILD_TAG }} # Local tag for docker commands
+          tags: ${{ env.LOCAL_IMAGE }} # Local tag for docker commands
 
       # -----------------------------------------------------------------------------------------------
       # 4) Runtime tests & Trivy security scan run against the local image
@@ -138,7 +139,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          LOCAL_IMAGE="${{ env.BASE }}-local:${{ env.BUILD_TAG }}"
           echo "Testing $LOCAL_IMAGE"
 
           docker run --rm "$LOCAL_IMAGE" echo "Container startup test passed" >/dev/null
@@ -163,7 +163,7 @@ jobs:
       - name: Trivy scan
         uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4  # v0.32.0
         with:
-          image-ref: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+          image-ref: ${{ env.LOCAL_IMAGE }}
           ignore-unfixed: true
           severity: CRITICAL,HIGH
           vuln-type: os,library
@@ -176,8 +176,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          LOCAL_IMAGE="${{ env.BASE }}-local:${{ env.BUILD_TAG }}"
-          echo "Inspecting image: $LOCAL_IMAGE"
 
           # Get vulnerability counts from Trivy JSON
           CRITICAL=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")' trivy-results.json | wc -l)
@@ -185,9 +183,7 @@ jobs:
           MEDIUM=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")' trivy-results.json | wc -l)
 
           # Get compressed size (sum of LayersData[].Size)
-          image_name=$(basename "${{ env.IMAGE }}")
           COMPRESSED=$(skopeo inspect "docker-daemon:${LOCAL_IMAGE}" | jq '[.LayersData[].Size] | add' | numfmt --to=iec --suffix=B)
-          echo "REPORT_FILE=${BASE}-TrivyScanReport.md" >> "$GITHUB_ENV"
           {
             echo "## 🔍 Trivy Security Scan Results"
             echo ""    
@@ -201,6 +197,7 @@ jobs:
             echo "| 🟡 Medium   | $MEDIUM   |"
             echo ""
           } | tee -a "$GITHUB_STEP_SUMMARY" "$REPORT_FILE" > /dev/null
+          echo "REPORT_FILE=${BASE}-TrivyScanReport.md" >> "$GITHUB_ENV"
 
           # Exit if any critical or high vulnerabilities
           if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
