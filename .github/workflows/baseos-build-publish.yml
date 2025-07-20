@@ -197,7 +197,7 @@ jobs:
             echo "| 🟠 High     | $HIGH     |"
             echo "| 🟡 Medium   | $MEDIUM   |"
             echo ""
-          } | tee -a "$GITHUB_STEP_SUMMARY" "$REPORT_FILE" > /dev/null
+          } | tee -a "$GITHUB_STEP_SUMMARY" ./"$REPORT_FILE" > /dev/null
 
           # Exit if any critical or high vulnerabilities
           if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
@@ -211,7 +211,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ env.BASE }}-build-report
-          path: ${{ env.BASE }}-buildReport.md
+          path: ./${{ env.REPORT_FILE }}
 
       # -----------------------------------------------------------------------------------------------
       # 5) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
