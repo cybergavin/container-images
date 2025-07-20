@@ -226,7 +226,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ env.BASE }}-vulnerability-reports
-          path: ${VULN_REPORTS_DIR}
+          path: ${{ env.VULN_REPORTS_DIR }}
 
       # -----------------------------------------------------------------------------------------------
       # 5) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
