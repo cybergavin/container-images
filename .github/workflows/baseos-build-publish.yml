@@ -170,11 +170,11 @@ jobs:
           format: json
           output: trivy-results.json
 
-      - name: Generate Trivy + Image Size Markdown Report
+      - name: Generate Trivy Report
         env:
-          REPORT_FILE: "${{ env.IMAGE }}-TrivyScanReport.md"
+          REPORT_FILE: "${{ env.BASE }}-TrivyScanReport.md"
         run: |
-          IMAGE_REF=docker://${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+          IMAGE_REF="${{ env.IMAGE }}:${{ env.BUILD_TAG }}"
           echo "Inspecting image: $IMAGE_REF"
 
           # Get vulnerability counts from Trivy JSON
