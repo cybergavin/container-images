@@ -19,7 +19,7 @@ permissions:
   contents: write
   packages: write      # For pushing test images
   id-token: write      # For cosign OIDC signing
-  attestations: write  # For SBOM attachments
+  attestations: write  # For SBOM and provenance attachments
 
 jobs:
   # This job discovers all Dockerfiles in the repository and lists them

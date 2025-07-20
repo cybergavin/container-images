@@ -22,44 +22,57 @@ All baseOS images include:
 - **Package Guardrails**: Wrapper scripts prevent `upgrade` commands
 - **Metadata Labels**: OpenContainers annotations for source and maintainer info
 
-### Package Management Restrictions
-```bash
-# Allowed operations
-apk add --no-cache python3        # ✅ Install new packages
-microdnf install -y nodejs        # ✅ Install new packages
+### 🔒 Security Features
 
-# Blocked operations
-apk upgrade                       # ❌ Blocked by guardrails
-microdnf upgrade -y              # ❌ Blocked by guardrails
+#### Hardening
+- **Non-root user:** All images include an appuser for running applications securely
+- **Package upgrade prevention:** Images are configured to prevent package upgrades to maintain consistency
+- **Minimal attack surface:** Based on minimal/distroless variants where available
+
+#### Vulnerability Management
+- **Trivy scanning:** Critical and high-severity vulnerabilities block image publication
+- **Grype scanning:** Additional vulnerability insights for comprehensive security assessment
+- **Automated reporting:** Vulnerability reports generated and uploaded as artifacts
+
+#### Supply Chain Security
+- **SBOM generation:** Software Bill of Materials automatically generated for all images
+- **Provenance attestation:** Build provenance tracked with maximum detail
+- **Cosign signing:** Images signed with keyless signing using GitHub OIDC
+- **Signature verification:** Automatic verification of image signatures post-build
+
+### 📋 Build Process
+
+#### Automated Triggers
+- **Scheduled builds:** Runs every fortnight at 10 AM UTC (0 10 */14 * *)
+- **Manual dispatch:** Can be triggered manually via GitHub Actions
+
+#### Build Pipeline
+- **Discovery:** Automatically discovers all Dockerfiles in the repository
+- **Linting:** Hadolint validation of Dockerfiles
+- **Local build:** Images built locally for testing before publication
+- **Functional testing:** Container startup and security configuration validation
+- **Vulnerability scanning:** Trivy and Grype security assessments
+- **Publication:** Images pushed to GitHub container registry (`ghcr.io`) only after all tests pass
+- **Attestation:** SBOM and provenance attached to published images
+- **Signing:** Cosign keyless signing with GitHub OIDC
+
+### 📦 Image Tags
+- Images are published with versioning based on the base OS version:
+
 ```
+{base-os-version}-b{build-number}-{YYYY.MM}
+```
+**Examples:**
 
-The wrapper scripts display clear error messages directing users to contact platform teams for upgrade requests.
+`2023-b01-2025.01` - Amazon Linux 2023, first build of January 2025
+`9.5-b02-2025.01` - AlmaLinux 9.5, second build of January 2025
+`3.21-b01-2025.01` - Alpine 3.21, first build of January 2025
 
-## Features
+- All images are also tagged as `latest`.
 
-### Security Controls
-- **Vulnerability Scanning**: All images undergo Trivy security scanning for CRITICAL and HIGH vulnerabilities
-- **Supply Chain Security**: Images are signed with Cosign and include SLSA provenance attestations
-- **SBOM Generation**: Software Bill of Materials (SBOM) in SPDX format for compliance and transparency
-- **Package Management Guardrails**: Wrapper scripts prevent runtime package upgrades (`apk upgrade`, `microdnf upgrade`) to maintain image stability
-- **Non-root User**: Includes pre-configured `appuser` (UID 1001) with dedicated `/app` workspace
-- **Standardized User Model**: Consistent user/group configuration across all distributions
+### 🚀 Usage
 
-### Build Process
-- **Automated Builds**: Fortnightly scheduled builds ensure images stay current with security patches
-- **Dockerfile Linting**: Hadolint validation enforces best practices
-- **Functional Testing**: Functional tests validate container startup and security controls
-- **Standardized Tooling**: All images include essential tools (curl, openssl, bash, jq, unzip, tzdata)
-- **Metadata Compliance**: OpenContainers annotations for source attribution and maintainer information
-
-### Distribution Strategy
-- **Versioning**: Images tagged with `{VERSION_ID}-b{BUILD_NUMBER}-{YYYY.MM}` format
-- **Latest Tags**: Always-current `latest` tag for each distribution
-- **Registry**: Published to GitHub Container Registry (ghcr.io)
-
-## Usage
-
-### Basic Usage
+#### Pull Images
 
 ```bash
 # Pull latest Alpine-based image
@@ -67,12 +80,19 @@ docker pull ghcr.io/cybergavin/alpine:latest
 
 # Pull specific versioned build
 docker pull ghcr.io/cybergavin/alpine:3.22.1-b01-2025.07
-
-# Run with non-root user
-docker run --user appuser ghcr.io/cybergavin/alpine:latest
 ```
 
-### Dockerfile Example
+#### Run Containers
+
+```bash
+# Run as non-root appuser
+docker run --rm ghcr.io/cybergavin/alpine:latest echo "Hello from Alpine!"
+
+# Interactive shell
+docker run -it ghcr.io/cybergavin/almalinux:latest
+```
+
+#### Dockerfile Usage
 
 ```dockerfile
 FROM ghcr.io/cybergavin/alpine:3.22.1-b01-2025.07
@@ -103,55 +123,32 @@ CMD ["python", "app.py"]
 
 ```
 
+### 🔍 Verification
 
-
-## Security Verification
-
-### Signature Verification
+#### Verify Image Signatures
 ```bash
-# Verify image signature
+# Verify with cosign
 cosign verify ghcr.io/cybergavin/alpine:latest \
-  --certificate-identity-regexp="^https://github.com/cybergavin/" \
+  --certificate-identity-regexp="^https://github.com/cybergavin/container-images/" \
   --certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
 
-### SBOM Access
+#### View Attestations
 ```bash
-# Extract SBOM for compliance
-docker buildx imagetools inspect ghcr.io/cybergavin/alpine:latest \
-  --format "{{ json .SBOM }}" > alpine-sbom.json
+# View SBOM
+cosign download sbom ghcr.io/cybergavin/alpine:latest
+
+# View provenance
+cosign download attestation ghcr.io/cybergavin/alpine:latest
 ```
 
-### Vulnerability Reports
-Each build includes a security scan summary showing vulnerability counts by severity level. Reports are available in the GitHub Actions workflow summaries.
+### 📊 Build Artifacts
+Each successful build generates the following artifacts:
 
-## Build System
+#### Vulnerability Reports
+- Trivy Report (TrivyScanReport.md) - Vulnerability scan for build pass/fail
+- Grype Report (GrypeScanReport.html) - Comprehensive vulnerability analysis
 
-### Automated Schedule
-- **Frequency**: Every 14 days at 10 AM UTC
-- **Trigger**: Scheduled via GitHub Actions cron
-- **Manual Builds**: Available via workflow_dispatch
-
-### Build Artifacts
-Each successful build produces:
-- Container image with security attestations
-- SBOM in SPDX JSON format
-- SLSA provenance attestation
-- Vulnerability scan report
-
-### Quality Gates
-Builds must pass all stages to be published:
-1. Dockerfile linting (Hadolint)
-2. Successful image build
-3. Functional testing (startup, package guardrails, user validation)
-4. Security scanning (Trivy)
-5. Signature verification
-
-
-## Compliance
-
-### Standards Alignment
-- **NIST Cybersecurity Framework**: Implements detect, protect, and respond controls
-- **CIS Benchmarks**: Follows container security best practices
-- **SLSA Level 3**: Provides build provenance and verification
-- **SPDX 2.3**: Standard SBOM format for license and dependency tracking
+#### Attestations
+- SBOM (sbom-{base}-{tag}.spdx.json) - Software Bill of Materials in SPDX format
+- Provenance (provenance-{base}-{tag}.json) - Build provenance information
