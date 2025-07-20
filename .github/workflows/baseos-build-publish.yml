@@ -183,7 +183,7 @@ jobs:
           MEDIUM=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")' trivy-results.json | wc -l)
 
           # Get compressed size (sum of LayersData[].Size)
-          COMPRESSED=$(skopeo inspect "docker://${IMAGE_REF}" | jq '[.LayersData[].Size] | add' | numfmt --to=iec --suffix=B)
+          COMPRESSED=$(skopeo inspect "docker-daemon://${IMAGE_REF}" | jq '[.LayersData[].Size] | add' | numfmt --to=iec --suffix=B)
 
           {
             echo "## 🔍 Trivy Security Scan Results"
