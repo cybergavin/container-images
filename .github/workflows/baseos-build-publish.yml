@@ -183,7 +183,7 @@ jobs:
           set -euo pipefail
 
           # Set up vulnerability scan report files
-          VULN_REPORTS_DIR=./vulnerability-reports/${BASE}-${BUILD_TAG}
+          VULN_REPORTS_DIR=./vulnerability-reports-${BASE}-${BUILD_TAG}
           mkdir -p "$VULN_REPORTS_DIR"
           TRIVY_REPORT=${VULN_REPORTS_DIR}/TrivyScanReport.md
           GRYPE_REPORT=${VULN_REPORTS_DIR}/GrypeScanReport.html
@@ -234,7 +234,7 @@ jobs:
       - name: Upload Vulnerability Report Artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ${{ env.BASE }}-vulnerability-reports
+          name: ${{ env.BASE }}-${{ env.BUILD_TAG }}-vulnerability-reports
           path: ${{ env.VULN_REPORTS_DIR }}
 
       # -----------------------------------------------------------------------------------------------
