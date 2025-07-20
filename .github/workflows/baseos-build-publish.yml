@@ -101,9 +101,10 @@ jobs:
             [ -n "$matching" ] && count=$(echo "$matching" | wc -l)
           fi
           num=$(printf "%02d" $((count + 1)))
-          echo "BUILD_TAG=${VERSION_ID}-b${num}-${DATE}" >> $GITHUB_ENV
+          BUILD_TAG=${VERSION_ID}-b${num}-${DATE}
+          echo "BUILD_TAG=${BUILD_TAG}" >> $GITHUB_ENV
           echo "LOCAL_IMAGE=${IMAGE}-local:${BUILD_TAG}" >> $GITHUB_ENV
-          echo "::notice:: BUILD_TAG=${VERSION_ID}-b${num}-${DATE}"
+          echo "::notice:: BUILD_TAG=${BUILD_TAG}"
 
       # -----------------------------------------------------------------------------------------------
       # 3) Build the image **locally only** (no push) so we can test it first
