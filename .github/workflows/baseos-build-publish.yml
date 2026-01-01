@@ -14,6 +14,8 @@ on:
 env:
   DEFAULT_REGISTRY: ghcr.io
   IMAGE_NAMESPACE: ${{ github.repository_owner }}
+  DOCKER_HUB_REGISTRY: docker.io
+  DOCKER_HUB_NAMESPACE: cybergavin
 
 permissions:
   contents: write
@@ -66,8 +68,10 @@ jobs:
           file="${{ matrix.dockerfile }}"
           base=$(basename "$(dirname "$file")")
           image="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${base}"
+          dockerhub_image="${{ env.DOCKER_HUB_REGISTRY }}/${{ env.DOCKER_HUB_NAMESPACE }}/${base}"
           echo "BASE=$base"          >> $GITHUB_ENV
           echo "IMAGE=$image"        >> $GITHUB_ENV
+          echo "DOCKERHUB_IMAGE=$dockerhub_image" >> $GITHUB_ENV
 
       - name: Set BASE_IMAGE and derive VERSION_ID
         shell: bash
@@ -240,11 +244,19 @@ jobs:
       # -----------------------------------------------------------------------------------------------
       # 6) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
       # -----------------------------------------------------------------------------------------------
-      - uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  # v3.6.0
+      - name: Login to GHCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  # v3.6.0
         with:
           registry: ${{ env.DEFAULT_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: docker.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.DOCKER_HUB_PAT }}
 
       - name: Re-build & PUSH image with SBOM + provenance
         id: push_remote
@@ -260,6 +272,8 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
             ${{ env.IMAGE }}:latest
+            ${{ env.DOCKERHUB_IMAGE }}:${{ env.BUILD_TAG }}
+            ${{ env.DOCKERHUB_IMAGE }}:latest
           sbom: true
           provenance: mode=max
           cache-from: type=gha
