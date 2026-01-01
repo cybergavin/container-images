@@ -279,23 +279,26 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Push image to Docker Hub (non-blocking)
+      - name: Mirror image from GHCR to Docker Hub (non-blocking)
         if: success()
         continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "::notice:: Attempting Docker Hub push (non-blocking)"
+          echo "::notice:: Mirroring image from GHCR to Docker Hub"
 
-          docker tag ${{ env.IMAGE }}:${{ env.BUILD_TAG }} \
-            ${{ env.DOCKERHUB_IMAGE }}:${{ env.BUILD_TAG }}
+          SRC_IMAGE="${{ env.IMAGE }}:${{ env.BUILD_TAG }}"
+          DST_IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ env.BUILD_TAG }}"
 
-          docker tag ${{ env.IMAGE }}:${{ env.BUILD_TAG }} \
-            ${{ env.DOCKERHUB_IMAGE }}:latest
+          skopeo copy \
+            docker://${SRC_IMAGE} \
+            docker://${DST_IMAGE}
 
-          docker push ${{ env.DOCKERHUB_IMAGE }}:${{ env.BUILD_TAG }}
-          docker push ${{ env.DOCKERHUB_IMAGE }}:latest
+          # Also mirror :latest
+          skopeo copy \
+            docker://${{ env.IMAGE }}:latest \
+            docker://${{ env.DOCKERHUB_IMAGE }}:latest
 
       # -----------------------------------------------------------------------------------------------
       # 7) Cosign sign & verify the **remote** image
