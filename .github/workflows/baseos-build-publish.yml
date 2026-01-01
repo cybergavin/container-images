@@ -30,7 +30,7 @@ jobs:
       files: ${{ steps.list.outputs.files }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: List Dockerfiles
         id: list
@@ -52,7 +52,7 @@ jobs:
     # 1) Checkout full history (needed for tag logic, SBOM provenance, etc.)
     # -----------------------------------------------------------------------------------------------
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 0  # Full history needed for tags and provenance
 
@@ -110,10 +110,10 @@ jobs:
       # 3) Build the image **locally only** (no push) so we can test it first
       # -----------------------------------------------------------------------------------------------
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Lint Dockerfile
-        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf  # v3.1.0
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5  # v3.3.0
         with:
           dockerfile: ${{ matrix.dockerfile }}
           failure-threshold: error
@@ -168,7 +168,7 @@ jobs:
       #    Grype scan results are collected but do not fail the build
       # -----------------------------------------------------------------------------------------------
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4  # v0.32.0
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8  # v0.33.1
         with:
           image-ref: ${{ env.LOCAL_IMAGE }}
           ignore-unfixed: true
@@ -232,7 +232,7 @@ jobs:
           grype -o template -t ./templates/GrypeReport.tmpl $LOCAL_IMAGE > "$GRYPE_REPORT"
 
       - name: Upload Vulnerability Report Artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: vulnerability-reports-${{ env.BASE }}-${{ env.BUILD_TAG }}
           path: ${{ env.VULN_REPORTS_DIR }}
@@ -240,7 +240,7 @@ jobs:
       # -----------------------------------------------------------------------------------------------
       # 6) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
       # -----------------------------------------------------------------------------------------------
-      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772  # v3.4.0
+      - uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  # v3.6.0
         with:
           registry: ${{ env.DEFAULT_REGISTRY }}
           username: ${{ github.actor }}
@@ -269,7 +269,7 @@ jobs:
       # 7) Cosign sign & verify the **remote** image
       # -----------------------------------------------------------------------------------------------
       - name: Install Cosign
-        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
 
       - name: Cosign sign & verify
         if: success()     # runs only if image pushed
@@ -311,7 +311,7 @@ jobs:
             --format "{{ json .Provenance }}" > ./attestations/provenance-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
 
       - name: Upload attestations
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: attestations-${{ env.BASE }}-${{ env.BUILD_TAG }}
           path: ./attestations/
