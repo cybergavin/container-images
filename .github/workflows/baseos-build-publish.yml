@@ -9,7 +9,7 @@ name: Build and Publish BaseOS Images
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 10 */14 * *'  # Every fortnight at 10 AM UTC
+    - cron: '0 10 1 * *'  # Every first day of the month at 10 AM UTC
 
 env:
   DEFAULT_REGISTRY: ghcr.io
