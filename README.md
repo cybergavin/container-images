@@ -2,6 +2,8 @@
 
 A secure, hardened collection of minimal base container images for platform engineering and application deployment. This repository provides standardized base images across multiple Linux distributions with built-in security controls and supply chain attestations.
 
+[Watch this video](https://www.youtube.com/watch?v=zwlAeCTpTRc) for an overview of the software in this repository.
+
 ### Available Images
 
 | Base Image       | Description                                                           | Size      | libc    | Package Manager   | Security Posture                     | Optimal Use Cases                                                                                       |
