@@ -32,7 +32,7 @@ jobs:
       files: ${{ steps.list.outputs.files }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: List Dockerfiles
         id: list
@@ -54,7 +54,7 @@ jobs:
     # 1) Checkout full history (needed for tag logic, SBOM provenance, etc.)
     # -----------------------------------------------------------------------------------------------
       - name: Checkout Repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0  # Full history needed for tags and provenance
 
@@ -125,7 +125,7 @@ jobs:
 
       - name: Build (LOCAL ONLY) with Buildx
         id: build_local
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83  # v6.18.0
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2
         env:
           DOCKER_BUILD_SUMMARY: false  # Explicitly disable build reports/artifacts        
         with:
@@ -172,7 +172,7 @@ jobs:
       #    Grype scan results are collected but do not fail the build
       # -----------------------------------------------------------------------------------------------
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8  # v0.33.1
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518  # v0.34.1
         with:
           image-ref: ${{ env.LOCAL_IMAGE }}
           ignore-unfixed: true
@@ -236,7 +236,7 @@ jobs:
           grype -o template -t ./templates/GrypeReport.tmpl $LOCAL_IMAGE > "$GRYPE_REPORT"
 
       - name: Upload Vulnerability Report Artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: vulnerability-reports-${{ env.BASE }}-${{ env.BUILD_TAG }}
           path: ${{ env.VULN_REPORTS_DIR }}
@@ -245,7 +245,7 @@ jobs:
       # 6) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
       # -----------------------------------------------------------------------------------------------
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           registry: ${{ env.DEFAULT_REGISTRY }}
           username: ${{ github.actor }}
@@ -254,7 +254,7 @@ jobs:
       - name: Login to Docker Hub (best effort)
         if: success()
         continue-on-error: true
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with:
           registry: docker.io
           username: ${{ github.actor }}
@@ -263,7 +263,7 @@ jobs:
       - name: Re-build & PUSH image to GHCR with SBOM + provenance
         id: push_remote
         if: success()     # <-- guard: only runs if every previous step succeeded
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83  # v6.18.0
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2
         env:
           DOCKER_BUILD_SUMMARY: false  # Explicitly disable build reports/artifacts        
         with:
@@ -346,7 +346,7 @@ jobs:
             --format "{{ json .Provenance }}" > ./attestations/provenance-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
 
       - name: Upload attestations
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: attestations-${{ env.BASE }}-${{ env.BUILD_TAG }}
           path: ./attestations/
