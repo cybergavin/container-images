@@ -125,7 +125,7 @@ jobs:
 
       - name: Build (LOCAL ONLY) with Buildx
         id: build_local
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294  # v7.0.0
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         env:
           DOCKER_BUILD_SUMMARY: false  # Explicitly disable build reports/artifacts        
         with:
@@ -172,7 +172,7 @@ jobs:
       #    Grype scan results are collected but do not fail the build
       # -----------------------------------------------------------------------------------------------
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # v0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: ${{ env.LOCAL_IMAGE }}
           ignore-unfixed: true
@@ -236,7 +236,7 @@ jobs:
           grype -o template -t ./templates/GrypeReport.tmpl $LOCAL_IMAGE > "$GRYPE_REPORT"
 
       - name: Upload Vulnerability Report Artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vulnerability-reports-${{ env.BASE }}-${{ env.BUILD_TAG }}
           path: ${{ env.VULN_REPORTS_DIR }}
@@ -245,7 +245,7 @@ jobs:
       # 6) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
       # -----------------------------------------------------------------------------------------------
       - name: Login to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2  # v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
         with:
           registry: ${{ env.DEFAULT_REGISTRY }}
           username: ${{ github.actor }}
@@ -254,7 +254,7 @@ jobs:
       - name: Login to Docker Hub (best effort)
         if: success()
         continue-on-error: true
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
           registry: docker.io
           username: ${{ github.actor }}
@@ -263,7 +263,7 @@ jobs:
       - name: Re-build & PUSH image to GHCR with SBOM + provenance
         id: push_remote
         if: success()     # <-- guard: only runs if every previous step succeeded
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294  # v7.0.0
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         env:
           DOCKER_BUILD_SUMMARY: false  # Explicitly disable build reports/artifacts        
         with:
@@ -304,7 +304,7 @@ jobs:
       # 7) Cosign sign & verify the **remote** image
       # -----------------------------------------------------------------------------------------------
       - name: Install Cosign
-        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
 
       - name: Cosign sign & verify
         if: success()     # runs only if image pushed
@@ -346,7 +346,7 @@ jobs:
             --format "{{ json .Provenance }}" > ./attestations/provenance-${{ env.BASE }}-${{ env.BUILD_TAG }}.json
 
       - name: Upload attestations
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: attestations-${{ env.BASE }}-${{ env.BUILD_TAG }}
           path: ./attestations/
