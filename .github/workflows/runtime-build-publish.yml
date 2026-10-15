@@ -120,6 +120,11 @@ jobs:
               primary_check_pattern="Python ${VERSION_ID}"
               secondary_check_cmd="python -m pip --version"
             ;;
+            node)
+              primary_check_cmd="node --version"
+              primary_check_pattern="v${VERSION_ID}"
+              secondary_check_cmd="npm --version"
+            ;;
             *)
               echo "Unknown runtime '$RUNTIME'"
               exit 1
