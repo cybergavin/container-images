@@ -172,19 +172,31 @@ jobs:
             runtime_version=$(basename "$(dirname "$variant_dir")")
             runtime=$(basename "$(dirname "$(dirname "$variant_dir")")")
 
-            case "$variant" in
+            if [[ "$variant" =~ -dev$ ]]; then
+              base_variant="${variant%-dev}"
+              is_dev="true"
+            else
+              base_variant="$variant"
+              is_dev="false"
+            fi
+
+            case "$base_variant" in
               wolfi)       base_img="cgr.dev/chainguard/wolfi-base:latest"; package_manager="apk";;
               alpine)      base_img="alpine:latest"; package_manager="apk";;
               almalinux)   base_img="almalinux:minimal"; package_manager="microdnf";;
               amazonlinux) base_img="public.ecr.aws/amazonlinux/amazonlinux:minimal"; package_manager="microdnf";;
-              *) echo "Unknown variant '$variant'"; exit 1;;
+              *) echo "Unknown base variant '$base_variant'"; exit 1;;
             esac
 
             case "$runtime" in
               python)
                 primary_check_cmd="python --version"
                 primary_check_pattern="Python ${runtime_version}"
-                secondary_check_cmd="python -m pip --version"
+                if [ "$is_dev" = "true" ]; then
+                  secondary_check_cmd="python -m pip --version"
+                else
+                  secondary_check_cmd="python -c \"import sys; print(sys.version)\""
+                fi
               ;;
               node)
                 primary_check_cmd="node --version"
@@ -197,6 +209,8 @@ jobs:
             echo "IMAGE_TYPE=runtime" >> "$GITHUB_ENV"
             echo "RUNTIME=$runtime" >> "$GITHUB_ENV"
             echo "VARIANT=$variant" >> "$GITHUB_ENV"
+            echo "BASE_VARIANT=$base_variant" >> "$GITHUB_ENV"
+            echo "IS_DEV=$is_dev" >> "$GITHUB_ENV"
             echo "VERSION_ID=$runtime_version" >> "$GITHUB_ENV"
             echo "BASE_IMAGE=$base_img" >> "$GITHUB_ENV"
             echo "PACKAGE_MANAGER=$package_manager" >> "$GITHUB_ENV"
@@ -226,6 +240,9 @@ jobs:
           file: ${{ matrix.dockerfile }}
           build-args: |
             BASE_IMAGE=${{ env.BASE_IMAGE }}
+            IMAGE_VERSION=pr-${{ github.run_id }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
             BUILD_LABEL=pr-${{ github.run_id }}
           load: true
           push: false
@@ -261,6 +278,16 @@ jobs:
             docker run --rm "${{ env.LOCAL_TAG }}" sh -c "${{ env.PRIMARY_CHECK_CMD }}" | grep -F "${{ env.PRIMARY_CHECK_PATTERN }}" >/dev/null
             docker run --rm "${{ env.LOCAL_TAG }}" sh -c "${{ env.SECONDARY_CHECK_CMD }}" >/dev/null
             echo "✅ Runtime checks passed (${{ env.PRIMARY_CHECK_CMD }} and ${{ env.SECONDARY_CHECK_CMD }})"
+
+            if [ "${{ env.RUNTIME }}" = "python" ]; then
+              if [ "${{ env.IS_DEV }}" = "false" ]; then
+                ! docker run --rm "${{ env.LOCAL_TAG }}" which pip >/dev/null 2>&1
+                echo "✅ Pip absence verified in hardened runtime"
+              else
+                docker run --rm "${{ env.LOCAL_TAG }}" which pip >/dev/null 2>&1
+                echo "✅ Pip presence verified in dev image"
+              fi
+            fi
           fi
 
           echo "::endgroup::"

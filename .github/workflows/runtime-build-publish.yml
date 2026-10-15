@@ -70,14 +70,29 @@ jobs:
           variant=$(basename "$variant_dir")
           runtime_version=$(basename "$(dirname "$variant_dir")")
           runtime=$(basename "$(dirname "$(dirname "$variant_dir")")")
-          image_name="${runtime}-${variant}"
+
+          # Check if variant is a dev variant (e.g. wolfi-dev)
+          if [[ "$variant" =~ -dev$ ]]; then
+            base_variant="${variant%-dev}"
+            tag_suffix="-dev"
+            is_dev="true"
+          else
+            base_variant="$variant"
+            tag_suffix=""
+            is_dev="false"
+          fi
+
+          image_name="${runtime}-${base_variant}"
           image="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${image_name}"
           dockerhub_image="${{ env.DOCKER_HUB_REGISTRY }}/${{ env.DOCKER_HUB_NAMESPACE }}/${image_name}"
-          artifact_key="${image_name}-${runtime_version}"
+          artifact_key="${image_name}-${runtime_version}${tag_suffix}"
           build_label=$(date +'%Y%m%d%H%M%S')
 
           echo "RUNTIME=$runtime"                  >> $GITHUB_ENV
           echo "VARIANT=$variant"                  >> $GITHUB_ENV
+          echo "BASE_VARIANT=$base_variant"        >> $GITHUB_ENV
+          echo "TAG_SUFFIX=$tag_suffix"            >> $GITHUB_ENV
+          echo "IS_DEV=$is_dev"                    >> $GITHUB_ENV
           echo "VERSION_ID=$runtime_version"        >> $GITHUB_ENV
           echo "IMAGE_NAME=$image_name"            >> $GITHUB_ENV
           echo "IMAGE=$image"                      >> $GITHUB_ENV
@@ -89,8 +104,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Point to published Cybergavin BaseOS image
-          case "$VARIANT" in
+          # Point to published Cybergavin BaseOS image for the base variant
+          case "$BASE_VARIANT" in
             wolfi)
               base_img="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/wolfi:latest"
               package_manager="apk"
@@ -108,7 +123,7 @@ jobs:
               package_manager="microdnf"
             ;;
             *)
-              echo "Unknown variant '$VARIANT'"
+              echo "Unknown base variant '$BASE_VARIANT'"
               exit 1
             ;;
           esac
@@ -118,7 +133,11 @@ jobs:
             python)
               primary_check_cmd="python --version"
               primary_check_pattern="Python ${VERSION_ID}"
-              secondary_check_cmd="python -m pip --version"
+              if [ "$IS_DEV" = "true" ]; then
+                secondary_check_cmd="python -m pip --version"
+              else
+                secondary_check_cmd="python -c \"import sys; print(sys.version)\""
+              fi
             ;;
             node)
               primary_check_cmd="node --version"
@@ -144,15 +163,24 @@ jobs:
           set -euo pipefail
           DATE=$(date +'%Y.%m')
           count=0
+          tag_prefix="${VERSION_ID}${TAG_SUFFIX}"
           if tag_list=$(skopeo list-tags "docker://${IMAGE}" 2>/dev/null); then
-            matching=$(echo "$tag_list" | jq -r '.Tags[]?' | grep "^${VERSION_ID}-b.*-${DATE}$" || true)
+            matching=$(echo "$tag_list" | jq -r '.Tags[]?' | grep "^${tag_prefix}-b.*-${DATE}$" || true)
             [ -n "$matching" ] && count=$(echo "$matching" | wc -l)
           fi
           num=$(printf "%02d" $((count + 1)))
-          BUILD_TAG=${VERSION_ID}-b${num}-${DATE}
+          BUILD_TAG=${tag_prefix}-b${num}-${DATE}
+          VERSION_TAG=${tag_prefix}
+          if [ "$IS_DEV" = "true" ]; then
+            LATEST_TAG="latest-dev"
+          else
+            LATEST_TAG="latest"
+          fi
           echo "BUILD_TAG=${BUILD_TAG}" >> $GITHUB_ENV
+          echo "VERSION_TAG=${VERSION_TAG}" >> $GITHUB_ENV
+          echo "LATEST_TAG=${LATEST_TAG}" >> $GITHUB_ENV
           echo "LOCAL_IMAGE=${IMAGE}-local:${BUILD_TAG}" >> $GITHUB_ENV
-          echo "::notice:: BUILD_TAG=${BUILD_TAG}"
+          echo "::notice:: BUILD_TAG=${BUILD_TAG}, VERSION_TAG=${VERSION_TAG}, LATEST_TAG=${LATEST_TAG}"
 
       # -----------------------------------------------------------------------------------------------
       # 3) Build the image **locally only** (no push) so we can test it first
@@ -184,6 +212,9 @@ jobs:
           file: ${{ matrix.dockerfile }}
           build-args: |
             BASE_IMAGE=${{ env.BASE_IMAGE }}
+            IMAGE_VERSION=${{ env.BUILD_TAG }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
             BUILD_LABEL=${{ env.BUILD_LABEL }}
           load: true          # Load into docker‑daemon, not pushed
           push: false
@@ -206,7 +237,7 @@ jobs:
           docker run --rm "$LOCAL_IMAGE" sh -c "$PRIMARY_CHECK_CMD" | grep -F "$PRIMARY_CHECK_PATTERN" >/dev/null
           echo "Primary check ($PRIMARY_CHECK_CMD) passed"
 
-          # Verify secondary runtime command (e.g. pip)
+          # Verify secondary runtime command
           docker run --rm "$LOCAL_IMAGE" sh -c "$SECONDARY_CHECK_CMD" >/dev/null
           echo "Secondary check ($SECONDARY_CHECK_CMD) passed"
 
@@ -224,6 +255,15 @@ jobs:
             ;;
           esac
           echo "Upgrade test passed"
+
+          # Runtime vs dev specific checks for Python
+          if [ "$IS_DEV" = "false" ] && [ "$RUNTIME" = "python" ]; then
+            ! docker run --rm "$LOCAL_IMAGE" which pip >/dev/null 2>&1
+            echo "Pip absence verified in hardened runtime"
+          elif [ "$IS_DEV" = "true" ] && [ "$RUNTIME" = "python" ]; then
+            docker run --rm "$LOCAL_IMAGE" which pip >/dev/null 2>&1
+            echo "Pip presence verified in dev image"
+          fi
 
           echo "::endgroup::"
           echo "::notice:: ✅ Functional tests passed"
@@ -333,12 +373,15 @@ jobs:
           file: ${{ matrix.dockerfile }}
           build-args: |
             BASE_IMAGE=${{ env.BASE_IMAGE }}
+            IMAGE_VERSION=${{ env.BUILD_TAG }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
             BUILD_LABEL=${{ env.BUILD_LABEL }}
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
-            ${{ env.IMAGE }}:${{ env.VERSION_ID }}
-            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ env.VERSION_TAG }}
+            ${{ env.IMAGE }}:${{ env.LATEST_TAG }}
           sbom: true
           provenance: mode=max
           cache-from: type=gha
@@ -360,15 +403,15 @@ jobs:
             docker://${SRC_IMAGE} \
             docker://${DST_IMAGE}
 
-          # Also mirror :${{ env.VERSION_ID }}
+          # Also mirror version tag (e.g. :3.12 or :3.12-dev)
           skopeo copy \
-            docker://${{ env.IMAGE }}:${{ env.VERSION_ID }} \
-            docker://${{ env.DOCKERHUB_IMAGE }}:${{ env.VERSION_ID }}
+            docker://${{ env.IMAGE }}:${{ env.VERSION_TAG }} \
+            docker://${{ env.DOCKERHUB_IMAGE }}:${{ env.VERSION_TAG }}
 
-          # Also mirror :latest
+          # Also mirror latest tag (e.g. :latest or :latest-dev)
           skopeo copy \
-            docker://${{ env.IMAGE }}:latest \
-            docker://${{ env.DOCKERHUB_IMAGE }}:latest
+            docker://${{ env.IMAGE }}:${{ env.LATEST_TAG }} \
+            docker://${{ env.DOCKERHUB_IMAGE }}:${{ env.LATEST_TAG }}
 
       # -----------------------------------------------------------------------------------------------
       # 7) Cosign sign & verify the **remote** image
