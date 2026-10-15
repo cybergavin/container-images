@@ -37,7 +37,7 @@ jobs:
       - name: List Dockerfiles
         id: list
         run: |
-          files=$(find . -mindepth 2 -name Dockerfile | jq -R -s -c 'split("\n")[:-1]')
+          files=$(find baseOS -mindepth 2 -name Dockerfile | sort | jq -R -s -c 'split("\n")[:-1]')
           echo "files=$files" >> $GITHUB_OUTPUT
   
   # This job builds and publishes the discovered Dockerfiles

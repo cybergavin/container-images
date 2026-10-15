@@ -1,0 +1,271 @@
+---
+# ============================================================================================
+# Copyright (c) 2025 Cybergavin (https://github.com/cybergavin/container-images) - MIT License
+# See the LICENSE file in the root of this repository for full license details.
+# ============================================================================================
+# This workflow runs non-publishing quality gates and validation on Pull Requests targeting main
+name: PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'baseOS/**'
+      - 'runtimes/**'
+      - '.github/workflows/**'
+      - '.agents/**'
+      - 'AGENTS.md'
+      - 'templates/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # -----------------------------------------------------------------------------------------------
+  # 1) Static lint and syntax validation for repository files
+  # -----------------------------------------------------------------------------------------------
+  lint-and-syntax:
+    name: Lint & Syntax Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate GitHub Actions Workflow YAML
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c "
+          import glob, yaml
+          workflows = glob.glob('.github/workflows/*.yml') + glob.glob('.github/workflows/*.yaml')
+          for w in workflows:
+              yaml.safe_load(open(w))
+              print(f'✅ Valid YAML: {w}')
+          "
+
+      - name: Verify GitHub Actions SHA Pinning
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Checking third-party action pinning in workflows..."
+          python3 -c "
+          import glob, re, sys
+          pattern = re.compile(r'^\s*uses:\s*([^#\s]+)@([^#\s]+)')
+          sha_pattern = re.compile(r'^[0-9a-f]{40}$')
+          unpinned = []
+          for w in glob.glob('.github/workflows/*.yml'):
+              with open(w) as f:
+                  for i, line in enumerate(f, 1):
+                      m = pattern.match(line)
+                      if m:
+                          action, ref = m.group(1), m.group(2)
+                          if not action.startswith('./') and not sha_pattern.match(ref):
+                              unpinned.append(f'{w}:{i} -> {action}@{ref}')
+          if unpinned:
+              print('❌ Found unpinned actions (must use full 40-character commit SHA):')
+              for u in unpinned:
+                  print(f'   {u}')
+              sys.exit(1)
+          print('✅ All third-party actions are pinned to commit SHAs')
+          "
+
+      - name: Validate Agent Skills Frontmatter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c "
+          import glob, yaml, sys
+          skill_files = glob.glob('.agents/skills/*/SKILL.md')
+          if not skill_files:
+              print('No skill files found to validate.')
+              sys.exit(0)
+          for s in skill_files:
+              content = open(s).read()
+              parts = content.split('---', 2)
+              if len(parts) < 3:
+                  print(f'❌ Missing YAML frontmatter in {s}')
+                  sys.exit(1)
+              data = yaml.safe_load(parts[1])
+              if not data or 'name' not in data or 'description' not in data:
+                  print(f'❌ Missing name or description in {s}')
+                  sys.exit(1)
+              print(f'✅ Valid skill: {s} ({data[\"name\"]})')
+          "
+
+  # -----------------------------------------------------------------------------------------------
+  # 2) Discover changed Dockerfiles (or all on workflow_dispatch)
+  # -----------------------------------------------------------------------------------------------
+  discover-dockerfiles:
+    name: Discover Changed Dockerfiles
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.detect.outputs.files }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Detect Changed Dockerfiles
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}" --depth=1
+            changed_files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -E '^(baseOS|runtimes)/.*Dockerfile$' || true)
+            if [ -n "$changed_files" ]; then
+              files=$(echo "$changed_files" | sort -u | jq -R -s -c 'split("\n")[:-1]')
+            else
+              files="[]"
+            fi
+          else
+            files=$(find baseOS runtimes -name Dockerfile | sort | jq -R -s -c 'split("\n")[:-1]')
+          fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          echo "::notice:: Target Dockerfiles to test: $files"
+
+  # -----------------------------------------------------------------------------------------------
+  # 3) Local test build, functional tests, and security scans for changed Dockerfiles
+  # -----------------------------------------------------------------------------------------------
+  test-dockerfiles:
+    name: Test & Scan
+    needs: [lint-and-syntax, discover-dockerfiles]
+    if: ${{ needs.discover-dockerfiles.outputs.files != '[]' && needs.discover-dockerfiles.outputs.files != '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: ${{ fromJson(needs.discover-dockerfiles.outputs.files) }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Derive Test Variables
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="${{ matrix.dockerfile }}"
+          echo "Testing $file"
+
+          if [[ "$file" =~ ^baseOS/ ]]; then
+            base=$(basename "$(dirname "$file")")
+            case "$base" in
+              amazonlinux) base_img="public.ecr.aws/amazonlinux/amazonlinux:minimal"; package_manager="microdnf";;
+              almalinux)   base_img="almalinux:minimal"; package_manager="microdnf";;
+              alpine)      base_img="alpine"; package_manager="apk";;
+              wolfi)       base_img="cgr.dev/chainguard/wolfi-base"; package_manager="apk";;
+              *) echo "Unknown base '$base'"; exit 1;;
+            esac
+            echo "IMAGE_TYPE=baseos" >> "$GITHUB_ENV"
+            echo "BASE=$base" >> "$GITHUB_ENV"
+            echo "BASE_IMAGE=$base_img" >> "$GITHUB_ENV"
+            echo "PACKAGE_MANAGER=$package_manager" >> "$GITHUB_ENV"
+
+          elif [[ "$file" =~ ^runtimes/ ]]; then
+            variant_dir=$(dirname "$file")
+            variant=$(basename "$variant_dir")
+            runtime_version=$(basename "$(dirname "$variant_dir")")
+            runtime=$(basename "$(dirname "$(dirname "$variant_dir")")")
+
+            case "$variant" in
+              wolfi)       base_img="cgr.dev/chainguard/wolfi-base:latest"; package_manager="apk";;
+              alpine)      base_img="alpine:latest"; package_manager="apk";;
+              almalinux)   base_img="almalinux:minimal"; package_manager="microdnf";;
+              amazonlinux) base_img="public.ecr.aws/amazonlinux/amazonlinux:minimal"; package_manager="microdnf";;
+              *) echo "Unknown variant '$variant'"; exit 1;;
+            esac
+
+            case "$runtime" in
+              python)
+                primary_check_cmd="python --version"
+                primary_check_pattern="Python ${runtime_version}"
+                secondary_check_cmd="python -m pip --version"
+              ;;
+              *) echo "Unknown runtime '$runtime'"; exit 1;;
+            esac
+
+            echo "IMAGE_TYPE=runtime" >> "$GITHUB_ENV"
+            echo "RUNTIME=$runtime" >> "$GITHUB_ENV"
+            echo "VARIANT=$variant" >> "$GITHUB_ENV"
+            echo "VERSION_ID=$runtime_version" >> "$GITHUB_ENV"
+            echo "BASE_IMAGE=$base_img" >> "$GITHUB_ENV"
+            echo "PACKAGE_MANAGER=$package_manager" >> "$GITHUB_ENV"
+            echo "PRIMARY_CHECK_CMD=$primary_check_cmd" >> "$GITHUB_ENV"
+            echo "PRIMARY_CHECK_PATTERN=$primary_check_pattern" >> "$GITHUB_ENV"
+            echo "SECONDARY_CHECK_CMD=$secondary_check_cmd" >> "$GITHUB_ENV"
+          fi
+
+          echo "LOCAL_TAG=pr-test-${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+
+      - name: Lint Dockerfile with Hadolint
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+          failure-threshold: error
+          ignore: DL3018,DL3059,DL3041,DL3006,DL3066
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build Local Image (No Push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_SUMMARY: false
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: |
+            BASE_IMAGE=${{ env.BASE_IMAGE }}
+            BUILD_LABEL=pr-${{ github.run_id }}
+          load: true
+          push: false
+          tags: ${{ env.LOCAL_TAG }}
+
+      - name: Functional Tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group:: Testing ${{ env.LOCAL_TAG }}"
+
+          # 1. Startup check
+          docker run --rm "${{ env.LOCAL_TAG }}" echo "Container startup test passed" >/dev/null
+          echo "✅ Startup check passed"
+
+          # 2. Non-root user check
+          docker run --rm "${{ env.LOCAL_TAG }}" id appuser >/dev/null
+          echo "✅ appuser (1001) check passed"
+
+          # 3. Upgrade prevention guardrail check
+          case "${{ env.PACKAGE_MANAGER }}" in
+            apk)
+              ! docker run --rm "${{ env.LOCAL_TAG }}" apk upgrade
+            ;;
+            microdnf)
+              ! docker run --rm "${{ env.LOCAL_TAG }}" microdnf upgrade -y
+            ;;
+          esac
+          echo "✅ Package manager upgrade prevention check passed"
+
+          # 4. Runtime checks (if runtime image)
+          if [ "${{ env.IMAGE_TYPE }}" = "runtime" ]; then
+            docker run --rm "${{ env.LOCAL_TAG }}" sh -c "${{ env.PRIMARY_CHECK_CMD }}" | grep -F "${{ env.PRIMARY_CHECK_PATTERN }}" >/dev/null
+            docker run --rm "${{ env.LOCAL_TAG }}" sh -c "${{ env.SECONDARY_CHECK_CMD }}" >/dev/null
+            echo "✅ Runtime checks passed (${{ env.PRIMARY_CHECK_CMD }} and ${{ env.SECONDARY_CHECK_CMD }})"
+          fi
+
+          echo "::endgroup::"
+
+      - name: Trivy Vulnerability Scan (Warning / Advisory)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.LOCAL_TAG }}
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          vuln-type: os,library
+          format: table
+          exit-code: '0' # Non-blocking advisory on PRs; blocking happens before actual publish
