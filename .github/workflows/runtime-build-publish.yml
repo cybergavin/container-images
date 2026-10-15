@@ -1,0 +1,417 @@
+---
+# ============================================================================================
+# Copyright (c) 2025 Cybergavin (https://github.com/cybergavin/container-images) - MIT License
+# See the LICENSE file in the root of this repository for full license details.
+# ============================================================================================
+# This workflow may be triggered by a schedule or manually, to rebuild and publish runtime container images
+name: Build and Publish Runtime Images
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 10 1 * *'  # Every first day of the month at 10 AM UTC
+
+env:
+  DEFAULT_REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+  DOCKER_HUB_REGISTRY: docker.io
+  DOCKER_HUB_NAMESPACE: cybergavin
+
+permissions:
+  contents: write
+  packages: write      # For pushing test images
+  id-token: write      # For cosign OIDC signing
+  attestations: write  # For SBOM and provenance attachments
+
+jobs:
+  # This job discovers all runtime Dockerfiles in the repository and lists them
+  # It outputs a JSON array of file paths, which is used by the build-publish job
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.list.outputs.files }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: List Dockerfiles
+        id: list
+        run: |
+          files=$(find runtimes -mindepth 4 -name Dockerfile | sort | jq -R -s -c 'split("\n")[:-1]')
+          echo "files=$files" >> $GITHUB_OUTPUT
+
+  # This job builds and publishes the discovered Dockerfiles
+  build-publish:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: ${{ fromJson(needs.discover.outputs.files) }}
+
+    steps:
+    # -----------------------------------------------------------------------------------------------
+    # 1) Checkout full history (needed for tag logic, SBOM provenance, etc.)
+    # -----------------------------------------------------------------------------------------------
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # Full history needed for tags and provenance
+
+    # -----------------------------------------------------------------------------------------------
+    # 2) Derive variables that later steps will rely on
+    # -----------------------------------------------------------------------------------------------
+      - name: Set build variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="${{ matrix.dockerfile }}"
+          variant_dir=$(dirname "$file")
+          variant=$(basename "$variant_dir")
+          runtime_version=$(basename "$(dirname "$variant_dir")")
+          runtime=$(basename "$(dirname "$(dirname "$variant_dir")")")
+          image_name="${runtime}-${variant}"
+          image="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${image_name}"
+          dockerhub_image="${{ env.DOCKER_HUB_REGISTRY }}/${{ env.DOCKER_HUB_NAMESPACE }}/${image_name}"
+          artifact_key="${image_name}-${runtime_version}"
+          build_label=$(date +'%Y%m%d%H%M%S')
+
+          echo "RUNTIME=$runtime"                  >> $GITHUB_ENV
+          echo "VARIANT=$variant"                  >> $GITHUB_ENV
+          echo "VERSION_ID=$runtime_version"        >> $GITHUB_ENV
+          echo "IMAGE_NAME=$image_name"            >> $GITHUB_ENV
+          echo "IMAGE=$image"                      >> $GITHUB_ENV
+          echo "DOCKERHUB_IMAGE=$dockerhub_image"  >> $GITHUB_ENV
+          echo "ARTIFACT_KEY=$artifact_key"        >> $GITHUB_ENV
+          echo "BUILD_LABEL=$build_label"          >> $GITHUB_ENV
+
+      - name: Set BASE_IMAGE and runtime test behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Point to published Cybergavin BaseOS image
+          case "$VARIANT" in
+            wolfi)
+              base_img="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/wolfi:latest"
+              package_manager="apk"
+            ;;
+            alpine)
+              base_img="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/alpine:latest"
+              package_manager="apk"
+            ;;
+            almalinux)
+              base_img="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/almalinux:latest"
+              package_manager="microdnf"
+            ;;
+            amazonlinux)
+              base_img="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/amazonlinux:latest"
+              package_manager="microdnf"
+            ;;
+            *)
+              echo "Unknown variant '$VARIANT'"
+              exit 1
+            ;;
+          esac
+
+          # Define runtime command checks
+          case "$RUNTIME" in
+            python)
+              primary_check_cmd="python --version"
+              primary_check_pattern="Python ${VERSION_ID}"
+              secondary_check_cmd="python -m pip --version"
+            ;;
+            *)
+              echo "Unknown runtime '$RUNTIME'"
+              exit 1
+            ;;
+          esac
+
+          echo "BASE_IMAGE=$base_img" >> $GITHUB_ENV
+          echo "PACKAGE_MANAGER=$package_manager" >> $GITHUB_ENV
+          echo "PRIMARY_CHECK_CMD=$primary_check_cmd" >> $GITHUB_ENV
+          echo "PRIMARY_CHECK_PATTERN=$primary_check_pattern" >> $GITHUB_ENV
+          echo "SECONDARY_CHECK_CMD=$secondary_check_cmd" >> $GITHUB_ENV
+          echo "::notice:: Using base image $base_img for $RUNTIME $VERSION_ID ($VARIANT)"
+
+      - name: Compute BUILD_TAG
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATE=$(date +'%Y.%m')
+          count=0
+          if tag_list=$(skopeo list-tags "docker://${IMAGE}" 2>/dev/null); then
+            matching=$(echo "$tag_list" | jq -r '.Tags[]?' | grep "^${VERSION_ID}-b.*-${DATE}$" || true)
+            [ -n "$matching" ] && count=$(echo "$matching" | wc -l)
+          fi
+          num=$(printf "%02d" $((count + 1)))
+          BUILD_TAG=${VERSION_ID}-b${num}-${DATE}
+          echo "BUILD_TAG=${BUILD_TAG}" >> $GITHUB_ENV
+          echo "LOCAL_IMAGE=${IMAGE}-local:${BUILD_TAG}" >> $GITHUB_ENV
+          echo "::notice:: BUILD_TAG=${BUILD_TAG}"
+
+      # -----------------------------------------------------------------------------------------------
+      # 3) Build the image **locally only** (no push) so we can test it first
+      # -----------------------------------------------------------------------------------------------
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Login to GHCR (for pulling base image)
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.DEFAULT_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387  # v3.5.0
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+          failure-threshold: error
+          ignore: DL3018,DL3059,DL3041,DL3006,DL3066
+
+      - name: Build (LOCAL ONLY) with Buildx
+        id: build_local
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        env:
+          DOCKER_BUILD_SUMMARY: false  # Explicitly disable build reports/artifacts        
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: |
+            BASE_IMAGE=${{ env.BASE_IMAGE }}
+            BUILD_LABEL=${{ env.BUILD_LABEL }}
+          load: true          # Load into docker‑daemon, not pushed
+          push: false
+          tags: ${{ env.LOCAL_IMAGE }} # Local tag for docker commands
+
+      # -----------------------------------------------------------------------------------------------
+      # 4) Functional tests run against the local image
+      #    Any failure here will abort the job before the image is published
+      # -----------------------------------------------------------------------------------------------
+      - name: Functional tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group:: Testing $LOCAL_IMAGE"
+
+          docker run --rm "$LOCAL_IMAGE" echo "Container startup test passed" >/dev/null
+          echo "Startup check passed"
+
+          # Verify primary runtime command and version output
+          docker run --rm "$LOCAL_IMAGE" sh -c "$PRIMARY_CHECK_CMD" | grep -F "$PRIMARY_CHECK_PATTERN" >/dev/null
+          echo "Primary check ($PRIMARY_CHECK_CMD) passed"
+
+          # Verify secondary runtime command (e.g. pip)
+          docker run --rm "$LOCAL_IMAGE" sh -c "$SECONDARY_CHECK_CMD" >/dev/null
+          echo "Secondary check ($SECONDARY_CHECK_CMD) passed"
+
+          # Verify non-root user appuser exists
+          docker run --rm "$LOCAL_IMAGE" id appuser >/dev/null
+          echo "appuser exists check passed"
+
+          # Upgrade prevention check
+          case "$PACKAGE_MANAGER" in
+            apk)
+              ! docker run --rm "$LOCAL_IMAGE" apk upgrade
+            ;;
+            microdnf)
+              ! docker run --rm "$LOCAL_IMAGE" microdnf upgrade -y
+            ;;
+          esac
+          echo "Upgrade test passed"
+
+          echo "::endgroup::"
+          echo "::notice:: ✅ Functional tests passed"
+
+      # -----------------------------------------------------------------------------------------------
+      # 5) Vulnerability scans run against the local image
+      #    Any failure in the Trivy scan will abort the job before the image is published
+      #    Grype scan results are collected but do not fail the build
+      # -----------------------------------------------------------------------------------------------
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: ${{ env.LOCAL_IMAGE }}
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          vuln-type: os,library
+          format: json
+          output: trivy-results.json
+
+      - name: Generate Vulnerability Reports
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Set up vulnerability scan report files
+          VULN_REPORTS_DIR=./vulnerability-reports-${ARTIFACT_KEY}-${BUILD_TAG}
+          mkdir -p "$VULN_REPORTS_DIR"
+          TRIVY_REPORT=${VULN_REPORTS_DIR}/TrivyScanReport.md
+          GRYPE_REPORT=${VULN_REPORTS_DIR}/GrypeScanReport.html
+          echo "TRIVY_REPORT=${TRIVY_REPORT}" >> "$GITHUB_ENV"
+          echo "GRYPE_REPORT=${GRYPE_REPORT}" >> "$GITHUB_ENV"
+          echo "VULN_REPORTS_DIR=${VULN_REPORTS_DIR}" >> "$GITHUB_ENV"
+
+          # Get vulnerability counts from Trivy JSON
+          CRITICAL=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")' trivy-results.json | wc -l)
+          HIGH=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")' trivy-results.json | wc -l)
+          MEDIUM=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")' trivy-results.json | wc -l)
+
+          # Get uncompressed size (sum of LayersData[].Size)
+          IMAGE_SIZE=$(skopeo inspect "docker-daemon:${LOCAL_IMAGE}" | jq '[.LayersData[].Size] | add' | numfmt --to=iec --suffix=B)
+          {
+            echo "## 🔍 Trivy Security Scan Results"
+            echo ""    
+            echo "### Image: ${{ env.IMAGE }}:${{ env.BUILD_TAG }}"
+            echo "### 📦 Uncompressed Image Size: $IMAGE_SIZE"
+            echo ""         
+            echo "| Severity | Count |"
+            echo "|----------|-------|"
+            echo "| 🔴 Critical | $CRITICAL |"
+            echo "| 🟠 High     | $HIGH     |"
+            echo "| 🟡 Medium   | $MEDIUM   |"
+            echo ""
+          } | tee -a "$GITHUB_STEP_SUMMARY" "$TRIVY_REPORT" > /dev/null
+
+          # Exit if any critical or high vulnerabilities
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "::error title=Trivy scan failed::Found $CRITICAL CRITICAL and $HIGH HIGH vulnerabilities"
+            exit 1
+          else
+            echo "::notice:: ✅ No critical or high vulnerabilities found"
+          fi
+
+      - name: Grype scan for additional insights
+        shell: bash
+        run: |
+          set -eu
+          # Generate Grype report (Grype results do not fail the build, but are used as supporting data)
+          # Install Grype
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+          # Run Grype scan
+          grype -o template -t ./templates/GrypeReport.tmpl $LOCAL_IMAGE > "$GRYPE_REPORT"
+
+      - name: Upload Vulnerability Report Artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vulnerability-reports-${{ env.ARTIFACT_KEY }}-${{ env.BUILD_TAG }}
+          path: ${{ env.VULN_REPORTS_DIR }}
+
+      # -----------------------------------------------------------------------------------------------
+      # 6) Login, push, generate SBOM & provenance **only if all previous steps succeeded**
+      # -----------------------------------------------------------------------------------------------
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        with:
+          registry: ${{ env.DEFAULT_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+      
+      - name: Login to Docker Hub (best effort)
+        if: success()
+        continue-on-error: true
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: docker.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.DOCKER_HUB_PAT }}
+
+      - name: Re-build & PUSH image to GHCR with SBOM + provenance
+        id: push_remote
+        if: success()     # <-- guard: only runs if every previous step succeeded
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        env:
+          DOCKER_BUILD_SUMMARY: false  # Explicitly disable build reports/artifacts        
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: |
+            BASE_IMAGE=${{ env.BASE_IMAGE }}
+            BUILD_LABEL=${{ env.BUILD_LABEL }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
+            ${{ env.IMAGE }}:${{ env.VERSION_ID }}
+            ${{ env.IMAGE }}:latest
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Mirror image from GHCR to Docker Hub (non-blocking)
+        if: success()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "::notice:: Mirroring image from GHCR to Docker Hub"
+
+          SRC_IMAGE="${{ env.IMAGE }}:${{ env.BUILD_TAG }}"
+          DST_IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ env.BUILD_TAG }}"
+
+          skopeo copy \
+            docker://${SRC_IMAGE} \
+            docker://${DST_IMAGE}
+
+          # Also mirror :${{ env.VERSION_ID }}
+          skopeo copy \
+            docker://${{ env.IMAGE }}:${{ env.VERSION_ID }} \
+            docker://${{ env.DOCKERHUB_IMAGE }}:${{ env.VERSION_ID }}
+
+          # Also mirror :latest
+          skopeo copy \
+            docker://${{ env.IMAGE }}:latest \
+            docker://${{ env.DOCKERHUB_IMAGE }}:latest
+
+      # -----------------------------------------------------------------------------------------------
+      # 7) Cosign sign & verify the **remote** image
+      # -----------------------------------------------------------------------------------------------
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Cosign sign & verify
+        if: success()     # runs only if image pushed
+        env:
+          COSIGN_EXPERIMENTAL: 1
+          DIGEST: ${{ steps.push_remote.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_DIGEST="${{ env.IMAGE }}@${DIGEST}"
+
+          echo "🔐 Signing $IMAGE_DIGEST"
+          cosign sign --yes "$IMAGE_DIGEST"
+
+          echo "🔍 Verifying signature and attestations"
+          cosign verify "$IMAGE_DIGEST" \
+            --certificate-identity-regexp="^https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+          echo "::notice:: ✅ Image signed & verified successfully"
+
+      # -----------------------------------------------------------------------------------------------
+      # 8) Extract and upload attestation artifacts (SBOM and provenance)
+      # -----------------------------------------------------------------------------------------------
+      - name: Extract attestations
+        env:
+          DIGEST: ${{ steps.push_remote.outputs.digest }}
+        shell: bash      
+        run: |
+          set -euo pipefail
+          mkdir -p ./attestations
+          IMAGE_DIGEST="${{ env.IMAGE }}@${DIGEST}"
+          
+          # Extract SBOM
+          docker buildx imagetools inspect $IMAGE_DIGEST \
+            --format "{{ json .SBOM }}" > ./attestations/sbom-${{ env.ARTIFACT_KEY }}-${{ env.BUILD_TAG }}.spdx.json
+
+          # Extract Provenance
+          docker buildx imagetools inspect $IMAGE_DIGEST \
+            --format "{{ json .Provenance }}" > ./attestations/provenance-${{ env.ARTIFACT_KEY }}-${{ env.BUILD_TAG }}.json
+
+      - name: Upload attestations
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: attestations-${{ env.ARTIFACT_KEY }}-${{ env.BUILD_TAG }}
+          path: ./attestations/
