@@ -3,7 +3,7 @@
 This repository builds, tests, scans, signs, publishes, and mirrors hardened BaseOS and language runtime container images.
 Keep this file concise; load only the matching procedure from `.agents/skills/`.
 
-## Operating Principles (Karpathy's Golden Rules)
+## Operating Principles
 
 - **Preserve user context**: Start with `git status --short --branch`. Never reformat, revert, stage, or commit unrelated changes.
 - **Define observable success first**: Know the exact success criteria and failure modes before modifying code.

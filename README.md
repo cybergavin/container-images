@@ -1,166 +1,147 @@
-## BaseOS Container Images
+# Hardened BaseOS & Runtime Container Images
 
-A secure, hardened collection of minimal base container images for platform engineering and application deployment. This repository provides standardized base images across multiple Linux distributions with built-in security controls and supply chain attestations.
+A secure, hardened collection of minimal base container images and language runtimes for platform engineering, AI/LLM workloads, and application deployment. Standardized across multiple Linux distributions with built-in security controls, supply chain attestations, and dual-registry distribution.
 
-[Watch this video](https://www.youtube.com/watch?v=zwlAeCTpTRc) for an overview of the software in this repository.
-
-### Available Images
-
-| Base Image       | Description                                                           | Size      | libc    | Package Manager   | Security Posture                     | Optimal Use Cases                                                                                       |
-| ---------------- | --------------------------------------------------------------------- | --------- | ------- | ----------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| **AlmaLinux Minimal**    | RHEL-compatible, stable, enterprise-grade distro                      | 🟨 Medium | `glibc` | `microdnf`             | CVE-patched, slower cadence          | - Legacy enterprise apps<br>- Python/C apps expecting RHEL<br>- Compliance-required workloads           |
-| **Alpine**       | Minimalist, musl-based, widely used in container environments         | 🟩 Tiny   | `musl`  | `apk`             | Frequent updates, fast CVE patching  | - Scratch-like microservices<br>- Fast CI/CD<br>- Static Go/Rust apps             |
-| **Amazon Linux Minimal** | AWS-optimized distro with tight EC2/ECS/Lambda integration            | 🟨 Medium | `glibc` | `microdnf`       | AWS-patched, fast sync with AWS CVEs | - AWS-hosted apps<br>- Lambda container images<br>- EKS/ECS-optimized workloads                         |
-| **Wolfi**        | Hardened, minimal, `glibc`-based with apk-like `melange`/`apko` build | 🟦 Tiny   | `glibc` | `melange` + `apk` | SBOM-native, hardened by default     | - Zero CVE base images<br>- LLM apps<br>- SLSA-compliant builds<br>- Multi-arch distroless-style images |
+[Watch this video](https://www.youtube.com/watch?v=zwlAeCTpTRc) for an overview of the base software in this repository.
 
 ---
 
-### Common Features
-All baseOS images include:
-- **Pre-installed Tools**: curl, openssl, bash, jq, unzip, tzdata
-- **Standardized User**: `appuser` (UID 1001) with `appgroup` (GID 1001)
-- **Working Directory**: `/app` with proper ownership
-- **Package Guardrails**: Wrapper scripts prevent `upgrade` commands
-- **Metadata Labels**: OpenContainers annotations for source and maintainer info
+## Available Images
+
+### 1. BaseOS Images
+
+| Base Image | Description | Size | libc | Package Manager | Security Posture | Optimal Use Cases |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **AlmaLinux Minimal** | RHEL-compatible, stable, enterprise-grade distro | 🟨 Medium | `glibc` | `microdnf` | CVE-patched, slower cadence | Legacy enterprise apps, RHEL workloads |
+| **Alpine** | Minimalist, musl-based, widely used in container environments | 🟩 Tiny | `musl` | `apk` | Frequent updates, fast CVE patching | Scratch-like microservices, static Go/Rust apps |
+| **Amazon Linux Minimal** | AWS-optimized distro with tight EC2/ECS/Lambda integration | 🟨 Medium | `glibc` | `microdnf` | AWS-patched, fast sync with AWS CVEs | AWS-hosted apps, Lambda container images, EKS |
+| **Wolfi** | Hardened, minimal, `glibc`-based with apk-like build | 🟦 Tiny | `glibc` | `melange` + `apk` | SBOM-native, zero-CVE posture | LLM apps, secure microservices, distroless-style |
+
+### 2. Language Runtime Images
+
+| Runtime Image | Version | Base OS | Primary Registry | Mirrored Registry | Features |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Python** | `3.12` | Wolfi | `ghcr.io/cybergavin/python-wolfi` | `docker.io/cybergavin/python-wolfi` | Python 3.12, pip, setuptools, wheel, non-root user |
 
 ---
 
-### 🔒 Security Features
+## Common Features & Hardening
 
-#### Hardening
-- **Non-root user:** All images include an appuser for running applications securely
-- **Package upgrade prevention:** Images are configured to prevent package upgrades to maintain consistency
-- **Minimal attack surface:** Based on minimal/distroless variants where available
-
-#### Vulnerability Management
-- **Trivy scanning:** Critical and high-severity vulnerabilities block image publication
-- **Grype scanning:** Additional vulnerability insights for comprehensive security assessment
-- **Automated reporting:** Vulnerability reports generated and uploaded as artifacts
-
-#### Supply Chain Security
-- **SBOM generation:** Software Bill of Materials automatically generated for all images
-- **Provenance attestation:** Build provenance tracked with maximum detail
-- **Cosign signing:** Images signed with keyless signing using GitHub OIDC
-- **Signature verification:** Automatic verification of image signatures post-build
+All BaseOS and runtime images include:
+- **Non-root user**: Default execution as `appuser` (UID 1001) with `appgroup` (GID 1001).
+- **Dedicated workdir**: `/app` with proper non-root ownership.
+- **Package Guardrails**: Package manager wrappers prevent runtime `upgrade` commands to preserve immutability and reproducibility.
+- **Minimal Attack Surface**: Based on minimal/distroless variants with package caches cleaned.
+- **Standardized Metadata**: OpenContainers and Cybergavin metadata annotations (`org.opencontainers.image.*`, `cg.image.*`, `build_label`).
 
 ---
 
-### 📋 Build Process
+## Security & Supply Chain Integrity
 
-#### Automated Triggers
-- **Scheduled builds:** Runs every fortnight at 10 AM UTC (0 10 */14 * *)
-- **Manual dispatch:** Can be triggered manually via GitHub Actions
-
-#### Build Pipeline
-- **Discovery:** Automatically discovers all Dockerfiles in the repository
-- **Linting:** Hadolint validation of Dockerfiles
-- **Local build:** Images built locally for testing before publication
-- **Functional testing:** Container startup and security configuration validation
-- **Vulnerability scanning:** Trivy and Grype security assessments
-- **Publication:** Images pushed to GitHub container registry (`ghcr.io`) only after all tests pass
-- **Attestation:** SBOM and provenance attached to published images
-- **Signing:** Cosign keyless signing with GitHub OIDC
+1. **Vulnerability Management**:
+   - **Trivy scanning**: High and Critical severity vulnerabilities strictly block image publication in release workflows.
+   - **Grype reporting**: Supplemental comprehensive HTML vulnerability reports generated via [`templates/GrypeReport.tmpl`](templates/GrypeReport.tmpl).
+2. **Supply Chain Attestation**:
+   - **SBOM generation**: Embedded and standalone SPDX Software Bill of Materials (`.spdx.json`).
+   - **Provenance**: In-toto build provenance tracked with maximum detail (`mode=max`).
+   - **Keyless Signing**: Images signed using Sigstore Cosign via GitHub Actions OIDC and immediately verified against the repository identity.
 
 ---
 
-### 📦 Image Tags
-- Images are published with versioning based on the base OS version:
+## CI/CD Workflows
 
-```
-{base-os-version}-b{build-number}-{YYYY.MM}
-```
-**Examples:**
+The repository uses three specialized GitHub Actions workflows:
 
-`2023-b01-2025.01` - Amazon Linux 2023, first build of January 2025
-`9.5-b02-2025.01` - AlmaLinux 9.5, second build of January 2025
-`3.21-b01-2025.01` - Alpine 3.21, first build of January 2025
+1. **[PR Validation](docs/WORKFLOWS.md#1-pr-validation-workflow-validateyml)** (`validate.yml`):
+   Runs non-publishing quality gates on PRs targeting `main` (Hadolint, workflow action SHA pinning, agent skills frontmatter, local test builds, and smoke tests).
+2. **[BaseOS Release](docs/WORKFLOWS.md#2-baseos-build-publish-workflow-baseos-build-publishyml)** (`baseos-build-publish.yml`):
+   Discovers `baseOS/` Dockerfiles, runs pre-publish tests/scans, publishes to GHCR, mirrors to Docker Hub, signs with Cosign, and publishes attestation artifacts.
+3. **[Runtime Release](docs/WORKFLOWS.md#3-runtime-build-publish-workflow-runtime-build-publishyml)** (`runtime-build-publish.yml`):
+   Discovers `runtimes/` Dockerfiles, resolves base images, runs runtime smoke tests, publishes to GHCR (`:BUILD_TAG`, `:<version>`, `:latest`), mirrors to Docker Hub, and signs with Cosign.
 
-- All images are also tagged as `latest`.
+> For detailed architecture, step breakdowns, and Mermaid sequence diagrams, see [**docs/WORKFLOWS.md**](docs/WORKFLOWS.md).
 
 ---
 
-### 🚀 Usage
+## Image Tagging Convention
 
-#### Pull Images
+Images are published to both **GHCR** (`ghcr.io/cybergavin/<name>`) and **Docker Hub** (`cybergavin/<name>`):
+
+- **BaseOS format**: `{base-version}-b{build-number}-{YYYY.MM}` and `latest`
+  - Example: `ghcr.io/cybergavin/alpine:3.22.1-b01-2025.07`
+- **Runtime format**: `{runtime-version}-b{build-number}-{YYYY.MM}`, `{runtime-version}`, and `latest`
+  - Example: `ghcr.io/cybergavin/python-wolfi:3.12-b01-2026.10`, `3.12`, `latest`
+
+---
+
+## 🚀 Usage
+
+### Pull Images
 
 ```bash
-# Pull latest Alpine-based image
-docker pull ghcr.io/cybergavin/alpine:latest
+# Pull BaseOS image from GHCR
+docker pull ghcr.io/cybergavin/wolfi:latest
 
-# Pull specific versioned build
-docker pull ghcr.io/cybergavin/alpine:3.22.1-b01-2025.07
+# Pull Python runtime from GHCR or Docker Hub
+docker pull ghcr.io/cybergavin/python-wolfi:3.12
+docker pull cybergavin/python-wolfi:3.12
 ```
 
-#### Run Containers
+### Run Containers
 
 ```bash
-# Run as non-root appuser
+# Run BaseOS container (runs as non-root appuser)
 docker run --rm ghcr.io/cybergavin/alpine:latest echo "Hello from Alpine!"
 
-# Interactive shell
-docker run -it ghcr.io/cybergavin/almalinux:latest
+# Run Python runtime container
+docker run --rm ghcr.io/cybergavin/python-wolfi:3.12 python -c "print('Hardened Python runtime ready!')"
 ```
 
-#### Dockerfile Usage
+### Application Dockerfile Example
 
 ```dockerfile
-FROM ghcr.io/cybergavin/alpine:3.22.1-b01-2025.07
+FROM ghcr.io/cybergavin/python-wolfi:3.12
 
-# Switch to root to install packages
-USER root
-RUN apk add --no-cache python3 py3-pip
-
-# Create a venv owned by appuser
-RUN python3 -m venv /opt/venv && \
-    chown -R appuser:appgroup /opt/venv
-
-# Drop privileges
-USER appuser
-WORKDIR /app
-
-# Use venv by default
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Copy app files
-COPY --chown=appuser:appgroup . .
-
-# Install Python deps into the venv
+# Copy application files (appuser ownership already configured)
+COPY --chown=appuser:appgroup requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Run your app (replace with your actual app)
-CMD ["python", "app.py"]
+COPY --chown=appuser:appgroup . .
 
+# Run application as non-root appuser
+CMD ["python", "app.py"]
 ```
+
 ---
 
-### 🔍 Verification
+## 🔍 Verification
 
-#### Verify Image Signatures
+### Verify Image Signatures
+
 ```bash
-# Verify with cosign
-cosign verify ghcr.io/cybergavin/alpine:latest \
+cosign verify ghcr.io/cybergavin/python-wolfi:3.12 \
   --certificate-identity-regexp="^https://github.com/cybergavin/container-images/" \
   --certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
 
-#### View Attestations
-```bash
-# View SBOM
-cosign download sbom ghcr.io/cybergavin/alpine:latest
+### Download SBOM & Attestations
 
-# View provenance
-cosign download attestation ghcr.io/cybergavin/alpine:latest
+```bash
+# Download SBOM
+cosign download sbom ghcr.io/cybergavin/python-wolfi:3.12
+
+# Download Provenance Attestation
+cosign download attestation ghcr.io/cybergavin/python-wolfi:3.12
 ```
 
 ---
 
-### 📊 Build Artifacts
-Each successful build generates the following artifacts:
+## 🤖 Agentic AI & Customizations
 
-#### Vulnerability Reports
-- Trivy Report (TrivyScanReport.md) - Vulnerability scan for build pass/fail
-- Grype Report (GrypeScanReport.html) - Comprehensive vulnerability analysis
-
-#### Attestations
-- SBOM (sbom-{base}-{tag}.spdx.json) - Software Bill of Materials in SPDX format
-- Provenance (provenance-{base}-{tag}.json) - Build provenance information
+This repository is configured for autonomous AI pair programming (Codex, Antigravity, and other agents):
+- [`AGENTS.md`](AGENTS.md): Repository operating principles, sources of truth, security contracts, and skill routing.
+- `.agents/skills/`: On-demand modular workflows:
+  - [`branch-commit-push-pr`](.agents/skills/branch-commit-push-pr/SKILL.md): Safe git branching, conventional commits, and staging hygiene.
+  - [`container-image-change`](.agents/skills/container-image-change/SKILL.md): Modifying existing BaseOS or runtime Dockerfiles.
+  - [`add-runtime-image`](.agents/skills/add-runtime-image/SKILL.md): Adding new language runtime versions or variants.
+  - [`container-release-workflow`](.agents/skills/container-release-workflow/SKILL.md): Managing CI/CD pipelines, action SHA pinning, and release gates.
