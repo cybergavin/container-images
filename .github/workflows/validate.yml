@@ -195,7 +195,7 @@ jobs:
                 if [ "$is_dev" = "true" ]; then
                   secondary_check_cmd="python -m pip --version"
                 else
-                  secondary_check_cmd="python -c \"import sys; print(sys.version)\""
+                  secondary_check_cmd="python -c pass"
                 fi
               ;;
               node)
@@ -252,32 +252,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "::group:: Testing ${{ env.LOCAL_TAG }}"
+          echo "::group:: Testing $LOCAL_TAG"
 
           # 1. Startup check
-          docker run --rm "${{ env.LOCAL_TAG }}" echo "Container startup test passed" >/dev/null
+          docker run --rm "$LOCAL_TAG" echo "Container startup test passed" >/dev/null
           echo "✅ Startup check passed"
 
           # 2. Non-root user check
-          docker run --rm "${{ env.LOCAL_TAG }}" id appuser >/dev/null
+          docker run --rm "$LOCAL_TAG" id appuser >/dev/null
           echo "✅ appuser (1001) check passed"
 
           # 3. Upgrade prevention guardrail check
-          case "${{ env.PACKAGE_MANAGER }}" in
+          case "$PACKAGE_MANAGER" in
             apk)
-              ! docker run --rm "${{ env.LOCAL_TAG }}" apk upgrade
+              ! docker run --rm "$LOCAL_TAG" apk upgrade
             ;;
             microdnf)
-              ! docker run --rm "${{ env.LOCAL_TAG }}" microdnf upgrade -y
+              ! docker run --rm "$LOCAL_TAG" microdnf upgrade -y
             ;;
           esac
           echo "✅ Package manager upgrade prevention check passed"
 
           # 4. Runtime checks (if runtime image)
-          if [ "${{ env.IMAGE_TYPE }}" = "runtime" ]; then
-            docker run --rm "${{ env.LOCAL_TAG }}" sh -c "${{ env.PRIMARY_CHECK_CMD }}" | grep -F "${{ env.PRIMARY_CHECK_PATTERN }}" >/dev/null
-            docker run --rm "${{ env.LOCAL_TAG }}" sh -c "${{ env.SECONDARY_CHECK_CMD }}" >/dev/null
-            echo "✅ Runtime checks passed (${{ env.PRIMARY_CHECK_CMD }} and ${{ env.SECONDARY_CHECK_CMD }})"
+          if [ "$IMAGE_TYPE" = "runtime" ]; then
+            docker run --rm "$LOCAL_TAG" sh -c "$PRIMARY_CHECK_CMD" | grep -F "$PRIMARY_CHECK_PATTERN" >/dev/null
+            docker run --rm "$LOCAL_TAG" sh -c "$SECONDARY_CHECK_CMD" >/dev/null
+            echo "✅ Runtime checks passed ($PRIMARY_CHECK_CMD and $SECONDARY_CHECK_CMD)"
 
             if [ "${{ env.RUNTIME }}" = "python" ]; then
               if [ "${{ env.IS_DEV }}" = "false" ]; then

@@ -136,7 +136,7 @@ jobs:
               if [ "$IS_DEV" = "true" ]; then
                 secondary_check_cmd="python -m pip --version"
               else
-                secondary_check_cmd="python -c \"import sys; print(sys.version)\""
+                secondary_check_cmd="python -c pass"
               fi
             ;;
             node)
