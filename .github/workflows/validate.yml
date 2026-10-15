@@ -186,6 +186,11 @@ jobs:
                 primary_check_pattern="Python ${runtime_version}"
                 secondary_check_cmd="python -m pip --version"
               ;;
+              node)
+                primary_check_cmd="node --version"
+                primary_check_pattern="v${runtime_version}"
+                secondary_check_cmd="npm --version"
+              ;;
               *) echo "Unknown runtime '$runtime'"; exit 1;;
             esac
 

@@ -21,7 +21,9 @@ A secure, hardened collection of minimal base container images and language runt
 
 | Runtime Image | Version | Base OS | Primary Registry | Mirrored Registry | Features |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Python** | `3.12` | Wolfi | `ghcr.io/cybergavin/python-wolfi` | `docker.io/cybergavin/python-wolfi` | Python 3.12, pip, setuptools, wheel, non-root user |
+| **Python** | `3.12` | Wolfi | `ghcr.io/cybergavin/python-wolfi:3.12` | `docker.io/cybergavin/python-wolfi:3.12` | Python 3.12, pip, setuptools, wheel, non-root user |
+| **Python** | `3.13` | Wolfi | `ghcr.io/cybergavin/python-wolfi:3.13` | `docker.io/cybergavin/python-wolfi:3.13` | Python 3.13, pip, setuptools, wheel, non-root user |
+| **Node.js** | `24` | Wolfi | `ghcr.io/cybergavin/node-wolfi:24` | `docker.io/cybergavin/node-wolfi:24` | Node.js 24, npm, production environment, non-root user |
 
 ---
 
@@ -83,8 +85,12 @@ Images are published to both **GHCR** (`ghcr.io/cybergavin/<name>`) and **Docker
 docker pull ghcr.io/cybergavin/wolfi:latest
 
 # Pull Python runtime from GHCR or Docker Hub
-docker pull ghcr.io/cybergavin/python-wolfi:3.12
-docker pull cybergavin/python-wolfi:3.12
+docker pull ghcr.io/cybergavin/python-wolfi:3.13
+docker pull cybergavin/python-wolfi:3.13
+
+# Pull Node.js runtime from GHCR or Docker Hub
+docker pull ghcr.io/cybergavin/node-wolfi:24
+docker pull cybergavin/node-wolfi:24
 ```
 
 ### Run Containers
@@ -94,7 +100,10 @@ docker pull cybergavin/python-wolfi:3.12
 docker run --rm ghcr.io/cybergavin/alpine:latest echo "Hello from Alpine!"
 
 # Run Python runtime container
-docker run --rm ghcr.io/cybergavin/python-wolfi:3.12 python -c "print('Hardened Python runtime ready!')"
+docker run --rm ghcr.io/cybergavin/python-wolfi:3.13 python -c "print('Hardened Python runtime ready!')"
+
+# Run Node.js runtime container
+docker run --rm ghcr.io/cybergavin/node-wolfi:24 node -e "console.log('Hardened Node.js runtime ready!')"
 ```
 
 ### Application Dockerfile Example
