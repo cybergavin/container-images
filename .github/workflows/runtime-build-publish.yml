@@ -142,7 +142,11 @@ jobs:
             node)
               primary_check_cmd="node --version"
               primary_check_pattern="v${VERSION_ID}"
-              secondary_check_cmd="npm --version"
+              if [ "$IS_DEV" = "true" ]; then
+                secondary_check_cmd="npm --version"
+              else
+                secondary_check_cmd="node -e 'process.exit(0)'"
+              fi
             ;;
             *)
               echo "Unknown runtime '$RUNTIME'"
@@ -263,6 +267,15 @@ jobs:
           elif [ "$IS_DEV" = "true" ] && [ "$RUNTIME" = "python" ]; then
             docker run --rm "$LOCAL_IMAGE" which pip >/dev/null 2>&1
             echo "Pip presence verified in dev image"
+          fi
+
+          # Runtime vs dev specific checks for Node
+          if [ "$IS_DEV" = "false" ] && [ "$RUNTIME" = "node" ]; then
+            ! docker run --rm "$LOCAL_IMAGE" which npm >/dev/null 2>&1
+            echo "Npm absence verified in hardened runtime"
+          elif [ "$IS_DEV" = "true" ] && [ "$RUNTIME" = "node" ]; then
+            docker run --rm "$LOCAL_IMAGE" which npm >/dev/null 2>&1
+            echo "Npm presence verified in dev image"
           fi
 
           echo "::endgroup::"
