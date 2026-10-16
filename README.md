@@ -2,8 +2,6 @@
 
 A secure, hardened collection of minimal base container images and language runtimes for platform engineering, AI/LLM workloads, and application deployment. Standardized across multiple Linux distributions with built-in security controls, supply chain attestations, and dual-registry distribution.
 
-[Watch this video](https://www.youtube.com/watch?v=zwlAeCTpTRc) for an overview of the base software in this repository.
-
 ---
 
 ## Available Images
