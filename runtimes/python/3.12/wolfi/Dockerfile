@@ -1,13 +1,11 @@
 # Refresh the upstream base for each runtime release with --pull --no-cache.
 # Publish each validated release under a new immutable tag or digest.
-ARG BASE_IMAGE=cgr.dev/chainguard/wolfi-base:latest
+ARG BASE_IMAGE=ghcr.io/cybergavin/wolfi:latest
 FROM ${BASE_IMAGE}
 
 USER 0:0
 
-ENV HOME=/home/appuser \
-    XDG_CACHE_HOME=/var/cache/app \
-    PYTHONDONTWRITEBYTECODE=1 \
+ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONNOUSERSITE=1 \
     PATH="/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -18,13 +16,6 @@ ENV HOME=/home/appuser \
 RUN set -eu; \
     umask 022; \
     apk add --no-cache python-3.12; \
-    if ! grep -q '^appgroup:' /etc/group; then addgroup -g 1001 appgroup; fi; \
-    if ! grep -q '^appuser:' /etc/passwd; then adduser -D -H -u 1001 -G appgroup -h /home/appuser -s /bin/sh appuser; fi; \
-    mkdir -p /home/appuser /app /var/lib/app /var/cache/app; \
-    chown 0:0 /home/appuser /app; \
-    chmod 0755 /home/appuser /app; \
-    chown 1001:1001 /var/lib/app /var/cache/app; \
-    chmod 0750 /var/lib/app /var/cache/app; \
     python3.12 -m venv --without-pip /opt/venv; \
     chmod -R go-w /opt/venv
 

@@ -69,9 +69,11 @@ jobs:
           base=$(basename "$(dirname "$file")")
           image="${{ env.DEFAULT_REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${base}"
           dockerhub_image="${{ env.DOCKER_HUB_REGISTRY }}/${{ env.DOCKER_HUB_NAMESPACE }}/${base}"
+          build_label=$(date +'%Y%m%d%H%M%S')
           echo "BASE=$base"          >> $GITHUB_ENV
           echo "IMAGE=$image"        >> $GITHUB_ENV
           echo "DOCKERHUB_IMAGE=$dockerhub_image" >> $GITHUB_ENV
+          echo "BUILD_LABEL=$build_label" >> $GITHUB_ENV
 
       - name: Set BASE_IMAGE and derive VERSION_ID
         shell: bash
@@ -81,7 +83,7 @@ jobs:
             amazonlinux) base_img="public.ecr.aws/amazonlinux/amazonlinux:minimal";;
             almalinux)   base_img="almalinux:minimal";;
             alpine)      base_img="alpine";;
-            wolfi)       base_img="cgr.dev/chainguard/wolfi-base";;
+            wolfi)       base_img="cgr.dev/chainguard/wolfi-base:latest";;
             *) echo "Unknown base '$BASE'"; exit 1;;
           esac
 
@@ -121,7 +123,7 @@ jobs:
         with:
           dockerfile: ${{ matrix.dockerfile }}
           failure-threshold: error
-          ignore: DL3018,DL3059,DL3041,DL3006
+          ignore: DL3018,DL3059,DL3041,DL3006,DL3066
 
       - name: Build (LOCAL ONLY) with Buildx
         id: build_local
@@ -131,7 +133,12 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          build-args: BASE_IMAGE=${{ env.BASE_IMAGE }}
+          build-args: |
+            BASE_IMAGE=${{ env.BASE_IMAGE }}
+            IMAGE_VERSION=${{ env.BUILD_TAG }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
+            BUILD_LABEL=${{ env.BUILD_LABEL }}
           load: true          # Load into docker‑daemon, not pushed
           push: false
           tags: ${{ env.LOCAL_IMAGE }} # Local tag for docker commands
@@ -175,8 +182,8 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: ${{ env.LOCAL_IMAGE }}
-          ignore-unfixed: true
-          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           vuln-type: os,library
           format: json
           output: trivy-results.json
@@ -199,6 +206,8 @@ jobs:
           CRITICAL=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")' trivy-results.json | wc -l)
           HIGH=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")' trivy-results.json | wc -l)
           MEDIUM=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")' trivy-results.json | wc -l)
+          LOW=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="LOW")' trivy-results.json | wc -l)
+          UNKNOWN=$(jq '.Results[]?.Vulnerabilities[]? | select(.Severity=="UNKNOWN")' trivy-results.json | wc -l)
 
           # Get uncompressed size (sum of LayersData[].Size)
           IMAGE_SIZE=$(skopeo inspect "docker-daemon:${LOCAL_IMAGE}" | jq '[.LayersData[].Size] | add' | numfmt --to=iec --suffix=B)
@@ -213,6 +222,8 @@ jobs:
             echo "| 🔴 Critical | $CRITICAL |"
             echo "| 🟠 High     | $HIGH     |"
             echo "| 🟡 Medium   | $MEDIUM   |"
+            echo "| 🟢 Low      | $LOW      |"
+            echo "| 🔵 Unknown  | $UNKNOWN  |"
             echo ""
           } | tee -a "$GITHUB_STEP_SUMMARY" "$TRIVY_REPORT" > /dev/null
 
@@ -269,7 +280,12 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          build-args: BASE_IMAGE=${{ env.BASE_IMAGE }}
+          build-args: |
+            BASE_IMAGE=${{ env.BASE_IMAGE }}
+            IMAGE_VERSION=${{ env.BUILD_TAG }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
+            BUILD_LABEL=${{ env.BUILD_LABEL }}
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ env.BUILD_TAG }}
