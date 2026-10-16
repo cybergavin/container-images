@@ -1,11 +1,10 @@
 # Development and builder variant for Python 3.12 on Wolfi
-ARG BASE_IMAGE=cgr.dev/chainguard/wolfi-base:latest
+ARG BASE_IMAGE=ghcr.io/cybergavin/wolfi:latest
 FROM ${BASE_IMAGE}
 
 USER 0:0
 
-ENV HOME=/home/appuser \
-    PYTHONDONTWRITEBYTECODE=1 \
+ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -18,11 +17,9 @@ RUN set -eu; \
         py3.12-pip \
         py3.12-setuptools \
         py3.12-wheel; \
-    if ! grep -q '^appgroup:' /etc/group; then addgroup -g 1001 appgroup; fi; \
-    if ! grep -q '^appuser:' /etc/passwd; then adduser -D -u 1001 -G appgroup -h /home/appuser -s /bin/sh appuser; fi; \
     ln -sf /usr/bin/python3 /usr/bin/python; \
     ln -sf /usr/bin/pip3 /usr/bin/pip; \
-    mkdir -p /home/appuser/.local /app /opt/venv; \
+    mkdir -p /home/appuser/.local /opt/venv; \
     chown -R 1001:1001 /home/appuser /app /opt/venv
 
 ARG IMAGE_VERSION=dev
