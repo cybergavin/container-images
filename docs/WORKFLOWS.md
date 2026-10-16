@@ -126,8 +126,8 @@ sequenceDiagram
 
     Cron->>Runner: Trigger Workflow
     Runner->>Runner: Discover Dockerfiles under runtimes/
-    Runner->>Runner: Parse RUNTIME, VERSION_ID, and VARIANT
-    Runner->>Runner: Set BASE_IMAGE (ghcr.io/cybergavin/variant:latest)
+    Runner->>Runner: Parse RUNTIME, VERSION_ID, and VARIANT (detects -dev)
+    Runner->>Runner: Set BASE_IMAGE (ghcr.io/cybergavin/wolfi:latest)
     Runner->>Runner: Compute BUILD_TAG via skopeo list-tags
     Runner->>Runner: Hadolint validation
 
@@ -136,8 +136,8 @@ sequenceDiagram
         Runner->>GHCR: Login to GHCR (to pull base image)
         Runner->>Docker: Build LOCAL image (no push)
         Runner->>Docker: Functional checks (startup, UID 1001, guardrails)
-        Runner->>Docker: Verify primary CLI (e.g. python --version)
-        Runner->>Docker: Verify secondary CLI (e.g. pip --version)
+        Runner->>Docker: Verify primary CLI (e.g. python --version or node --version)
+        Runner->>Docker: Verify tooling (package manager presence on dev, absence on runtime)
         Runner->>Sec: Trivy vulnerability scan (blocks on CRITICAL/HIGH)
         Runner->>Sec: Grype scan (Generate HTML report)
         Runner->>Runner: Upload scan reports as artifacts
@@ -146,9 +146,9 @@ sequenceDiagram
     rect rgb(240, 248, 255)
         Note over Runner,DHub: Publishing & Mirroring
         Runner->>Docker: Build & Push with SBOM + Provenance
-        Docker->>GHCR: Push :BUILD_TAG, :VERSION_ID, and :latest
+        Docker->>GHCR: Push tags (:BUILD_TAG, :VERSION_TAG, :LATEST_TAG, including -dev)
         Runner->>DHub: Login with DOCKER_HUB_PAT (best effort)
-        Runner->>DHub: Mirror :BUILD_TAG, :VERSION_ID, :latest via skopeo copy
+        Runner->>DHub: Mirror tags to Docker Hub via skopeo copy
     end
 
     rect rgb(255, 245, 245)
@@ -165,6 +165,6 @@ sequenceDiagram
 ## Security Invariants Across Pipelines
 
 1. **Gate before Push**: No remote image is ever published or mirrored without first passing local container smoke tests and Trivy vulnerability gates.
-2. **Keyless Signing**: Images are signed using GitHub Actions short-lived OIDC tokens through Sigstore Cosign—no long-lived private signing keys are stored in repository secrets.
+2. **Keyless Signing**: Images are signed using GitHub Actions short-lived OIDC tokens through Sigstore Cosign (no long-lived private signing keys are stored in repository secrets).
 3. **Supply Chain Attestation**: Every published image embeds both an in-toto provenance attestation (`mode=max`) and an SPDX Software Bill of Materials (SBOM), and publishes standalone JSON artifacts to the workflow run.
 4. **Action Pinning**: All third-party GitHub Actions are pinned to full 40-character commit SHAs to protect against upstream supply chain compromise.

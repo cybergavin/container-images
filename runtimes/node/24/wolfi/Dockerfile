@@ -1,37 +1,36 @@
-# This runtime defaults to the public Wolfi base image so local builds do not require GHCR auth.
-# A dedicated runtime workflow can override BASE_IMAGE to the published Cybergavin Wolfi base image later.
-
-ARG BASE_IMAGE=cgr.dev/chainguard/wolfi-base:latest
+# Refresh the upstream base for each runtime release with --pull --no-cache.
+# Publish each validated release under a new immutable tag or digest.
+ARG BASE_IMAGE=ghcr.io/cybergavin/wolfi:latest
 FROM ${BASE_IMAGE}
-ARG BUILD_LABEL
 
-USER root
+USER 0:0
+
+ENV NODE_ENV=production \
+    PATH="/app/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Policy: resolve current Node.js 24 packages when this layer is rebuilt.
+# APK --no-cache does not disable Docker's build-layer cache.
+RUN set -eu; \
+    umask 022; \
+    apk add --no-cache nodejs-24
+
+# Supplied by the release build; defaults allow standalone local developer builds.
+ARG IMAGE_VERSION=dev
+ARG VCS_REF=local
+ARG SOURCE_URL=https://github.com/cybergavin/container-images
+ARG BUILD_LABEL=local
 
 LABEL org.opencontainers.image.title="cg-node-runtime" \
-      org.opencontainers.image.description="Cybergavin Hardened Node.js 24 Runtime built on Wolfi" \
-      org.opencontainers.image.url="https://github.com/cybergavin/container-images" \
-      org.opencontainers.image.source="https://github.com/cybergavin/container-images" \
-      org.opencontainers.image.version="24" \
-      cg.image.maintainer="Cybergavin" \
-      cg.image.description="Cybergavin Hardened Node.js 24 Runtime built on Wolfi" \
+      org.opencontainers.image.description="Non-root Node.js 24 runtime base" \
+      org.opencontainers.image.version="${IMAGE_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.source="${SOURCE_URL}" \
       cg.image.runtime="node" \
       cg.image.runtime.version="24" \
-      build_label=${BUILD_LABEL}
-
-ENV HOME=/home/appuser \
-    NODE_ENV=production \
-    NPM_CONFIG_UPDATE_NOTIFIER=false \
-    PATH="/home/appuser/.local/bin:${PATH}"
-
-RUN apk add --no-cache \
-    nodejs-24 \
-    npm \
-    && if ! grep -q '^appgroup:' /etc/group; then addgroup -g 1001 appgroup; fi \
-    && if ! grep -q '^appuser:' /etc/passwd; then adduser -D -u 1001 -G appgroup -h /home/appuser -s /bin/sh appuser; fi \
-    && mkdir -p /home/appuser/.local /app \
-    && chown -R appuser:appgroup /home/appuser /app
+      cg.image.variant="runtime" \
+      build_label="${BUILD_LABEL}"
 
 WORKDIR /app
-USER appuser
+USER 1001:1001
 
 CMD ["node", "--version"]

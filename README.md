@@ -19,11 +19,18 @@ A secure, hardened collection of minimal base container images and language runt
 
 ### 2. Language Runtime Images
 
-| Runtime Image | Version | Base OS | Primary Registry | Mirrored Registry | Features |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Python** | `3.12` | Wolfi | `ghcr.io/cybergavin/python-wolfi:3.12` | `docker.io/cybergavin/python-wolfi:3.12` | Python 3.12, pip, setuptools, wheel, non-root user |
-| **Python** | `3.13` | Wolfi | `ghcr.io/cybergavin/python-wolfi:3.13` | `docker.io/cybergavin/python-wolfi:3.13` | Python 3.13, pip, setuptools, wheel, non-root user |
-| **Node.js** | `24` | Wolfi | `ghcr.io/cybergavin/node-wolfi:24` | `docker.io/cybergavin/node-wolfi:24` | Node.js 24, npm, production environment, non-root user |
+Every runtime is published in two purpose-built variants:
+- **Lean Runtime (`wolfi`)**: Minimal production image with package managers and compilers removed (`pip` omitted from Python, `npm` omitted from Node) for minimum attack surface.
+- **Dev / Builder (`wolfi-dev`)**: Development image with package managers (`pip`, `npm`) and build tools configured for non-root execution in multi-stage builds.
+
+| Runtime Image | Version | Variant | Base OS | Primary Registry | Mirrored Registry | Features |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Python** | `3.12` | Runtime | Wolfi | `ghcr.io/cybergavin/python-wolfi:3.12` | `docker.io/cybergavin/python-wolfi:3.12` | Python 3.12, virtualenv without pip, non-root user (1001:1001) |
+| **Python** | `3.12` | Dev | Wolfi | `ghcr.io/cybergavin/python-wolfi:3.12-dev` | `docker.io/cybergavin/python-wolfi:3.12-dev` | Python 3.12, pip, setuptools, wheel, builder permissions |
+| **Python** | `3.13` | Runtime | Wolfi | `ghcr.io/cybergavin/python-wolfi:3.13` | `docker.io/cybergavin/python-wolfi:3.13` | Python 3.13, virtualenv without pip, non-root user (1001:1001) |
+| **Python** | `3.13` | Dev | Wolfi | `ghcr.io/cybergavin/python-wolfi:3.13-dev` | `docker.io/cybergavin/python-wolfi:3.13-dev` | Python 3.13, pip, setuptools, wheel, builder permissions |
+| **Node.js** | `24` | Runtime | Wolfi | `ghcr.io/cybergavin/node-wolfi:24` | `docker.io/cybergavin/node-wolfi:24` | Node.js 24, production environment, non-root user (1001:1001) |
+| **Node.js** | `24` | Dev | Wolfi | `ghcr.io/cybergavin/node-wolfi:24-dev` | `docker.io/cybergavin/node-wolfi:24-dev` | Node.js 24, npm, development tools, builder permissions |
 
 ---
 
@@ -31,9 +38,9 @@ A secure, hardened collection of minimal base container images and language runt
 
 All BaseOS and runtime images include:
 - **Non-root user**: Default execution as `appuser` (UID 1001) with `appgroup` (GID 1001).
-- **Dedicated workdir**: `/app` with proper non-root ownership.
-- **Package Guardrails**: Package manager wrappers prevent runtime `upgrade` commands to preserve immutability and reproducibility.
-- **Minimal Attack Surface**: Based on minimal/distroless variants with package caches cleaned.
+- **Dedicated workdir**: `/app` with tamper-resistant root ownership (`0755`) or builder permissions.
+- **Package Guardrails**: Package manager upgrades blocked to preserve immutability and reproducibility.
+- **Minimal Attack Surface**: Production runtimes exclude package installers and dev tools.
 - **Standardized Metadata**: OpenContainers and Cybergavin metadata annotations (`org.opencontainers.image.*`, `cg.image.*`, `build_label`).
 
 ---
@@ -41,7 +48,7 @@ All BaseOS and runtime images include:
 ## Security & Supply Chain Integrity
 
 1. **Vulnerability Management**:
-   - **Trivy scanning**: High and Critical severity vulnerabilities strictly block image publication in release workflows.
+   - **Trivy scanning**: High and Critical severity vulnerabilities strictly block image publication in release workflows. Scans include all severity levels (UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL).
    - **Grype reporting**: Supplemental comprehensive HTML vulnerability reports generated via [`templates/GrypeReport.tmpl`](templates/GrypeReport.tmpl).
 2. **Supply Chain Attestation**:
    - **SBOM generation**: Embedded and standalone SPDX Software Bill of Materials (`.spdx.json`).
@@ -59,7 +66,7 @@ The repository uses three specialized GitHub Actions workflows:
 2. **[BaseOS Release](docs/WORKFLOWS.md#2-baseos-build-publish-workflow-baseos-build-publishyml)** (`baseos-build-publish.yml`):
    Discovers `baseOS/` Dockerfiles, runs pre-publish tests/scans, publishes to GHCR, mirrors to Docker Hub, signs with Cosign, and publishes attestation artifacts.
 3. **[Runtime Release](docs/WORKFLOWS.md#3-runtime-build-publish-workflow-runtime-build-publishyml)** (`runtime-build-publish.yml`):
-   Discovers `runtimes/` Dockerfiles, resolves base images, runs runtime smoke tests, publishes to GHCR (`:BUILD_TAG`, `:<version>`, `:latest`), mirrors to Docker Hub, and signs with Cosign.
+   Discovers `runtimes/` Dockerfiles, resolves base images, runs runtime smoke tests, publishes to GHCR (`:BUILD_TAG`, `:<version>`, `:latest`, and `:*-dev`), mirrors to Docker Hub, and signs with Cosign.
 
 > For detailed architecture, step breakdowns, and Mermaid sequence diagrams, see [**docs/WORKFLOWS.md**](docs/WORKFLOWS.md).
 
@@ -70,9 +77,12 @@ The repository uses three specialized GitHub Actions workflows:
 Images are published to both **GHCR** (`ghcr.io/cybergavin/<name>`) and **Docker Hub** (`cybergavin/<name>`):
 
 - **BaseOS format**: `{base-version}-b{build-number}-{YYYY.MM}` and `latest`
-  - Example: `ghcr.io/cybergavin/alpine:3.22.1-b01-2025.07`
-- **Runtime format**: `{runtime-version}-b{build-number}-{YYYY.MM}`, `{runtime-version}`, and `latest`
-  - Example: `ghcr.io/cybergavin/python-wolfi:3.12-b01-2026.10`, `3.12`, `latest`
+  - Example: `ghcr.io/cybergavin/wolfi:latest`
+- **Runtime format**:
+  - Lean Runtime: `{runtime-version}-b{build-number}-{YYYY.MM}`, `{runtime-version}`, and `latest`
+    - Example: `ghcr.io/cybergavin/python-wolfi:3.12`, `latest`
+  - Dev / Builder: `{runtime-version}-dev-b{build-number}-{YYYY.MM}`, `{runtime-version}-dev`, and `latest-dev`
+    - Example: `ghcr.io/cybergavin/python-wolfi:3.12-dev`, `latest-dev`
 
 ---
 
@@ -84,41 +94,41 @@ Images are published to both **GHCR** (`ghcr.io/cybergavin/<name>`) and **Docker
 # Pull BaseOS image from GHCR
 docker pull ghcr.io/cybergavin/wolfi:latest
 
-# Pull Python runtime from GHCR or Docker Hub
+# Pull Python lean runtime and dev images
 docker pull ghcr.io/cybergavin/python-wolfi:3.13
-docker pull cybergavin/python-wolfi:3.13
+docker pull ghcr.io/cybergavin/python-wolfi:3.13-dev
 
-# Pull Node.js runtime from GHCR or Docker Hub
+# Pull Node.js lean runtime and dev images
 docker pull ghcr.io/cybergavin/node-wolfi:24
-docker pull cybergavin/node-wolfi:24
+docker pull ghcr.io/cybergavin/node-wolfi:24-dev
 ```
 
-### Run Containers
+### Multi-Stage Application Dockerfile Example
 
-```bash
-# Run BaseOS container (runs as non-root appuser)
-docker run --rm ghcr.io/cybergavin/alpine:latest echo "Hello from Alpine!"
-
-# Run Python runtime container
-docker run --rm ghcr.io/cybergavin/python-wolfi:3.13 python -c "print('Hardened Python runtime ready!')"
-
-# Run Node.js runtime container
-docker run --rm ghcr.io/cybergavin/node-wolfi:24 node -e "console.log('Hardened Node.js runtime ready!')"
-```
-
-### Application Dockerfile Example
+Use the `-dev` image as a build environment, then copy artifacts into the lean runtime for a minimal, tamper-resistant production container:
 
 ```dockerfile
+# 1. Build stage using dev image (includes pip and build tools)
+FROM ghcr.io/cybergavin/python-wolfi:3.12-dev AS builder
+
+WORKDIR /app
+COPY requirements.txt .
+RUN python -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+# 2. Production stage using lean runtime (no pip, minimal attack surface)
 FROM ghcr.io/cybergavin/python-wolfi:3.12
 
-# Copy application files (appuser ownership already configured)
-COPY --chown=appuser:appgroup requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy virtualenv from builder
+COPY --from=builder --chown=0:0 /opt/venv /opt/venv
 
-COPY --chown=appuser:appgroup . .
+# Copy application source
+WORKDIR /app
+COPY --chown=0:0 . .
 
 # Run application as non-root appuser
-CMD ["python", "app.py"]
+USER 1001:1001
+CMD ["/opt/venv/bin/python", "app.py"]
 ```
 
 ---

@@ -1,43 +1,41 @@
-# This runtime defaults to the public Wolfi base image so local builds do not require GHCR auth.
-# A dedicated runtime workflow can override BASE_IMAGE to the published Cybergavin Wolfi base image later.
-
-ARG BASE_IMAGE=cgr.dev/chainguard/wolfi-base:latest
+# Refresh the upstream base for each runtime release with --pull --no-cache.
+# Publish each validated release under a new immutable tag or digest.
+ARG BASE_IMAGE=ghcr.io/cybergavin/wolfi:latest
 FROM ${BASE_IMAGE}
-ARG BUILD_LABEL
 
-USER root
+USER 0:0
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONNOUSERSITE=1 \
+    PATH="/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Policy: resolve current Python 3.13 packages when this layer is rebuilt.
+# Package names keep Python within the 3.13 family while allowing updates.
+# APK --no-cache does not disable Docker's build-layer cache.
+RUN set -eu; \
+    umask 022; \
+    apk add --no-cache python-3.13; \
+    python3.13 -m venv --without-pip /opt/venv; \
+    chmod -R go-w /opt/venv
+
+# Supplied by the release build; defaults allow standalone local developer builds.
+ARG IMAGE_VERSION=dev
+ARG VCS_REF=local
+ARG SOURCE_URL=https://github.com/cybergavin/container-images
+ARG BUILD_LABEL=local
 
 LABEL org.opencontainers.image.title="cg-python-runtime" \
-      org.opencontainers.image.description="Cybergavin Hardened Python 3.13 Runtime built on Wolfi" \
-      org.opencontainers.image.url="https://github.com/cybergavin/container-images" \
-      org.opencontainers.image.source="https://github.com/cybergavin/container-images" \
-      org.opencontainers.image.version="3.13" \
-      cg.image.maintainer="Cybergavin" \
-      cg.image.description="Cybergavin Hardened Python 3.13 Runtime built on Wolfi" \
+      org.opencontainers.image.description="Non-root Python 3.13 runtime base" \
+      org.opencontainers.image.version="${IMAGE_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.source="${SOURCE_URL}" \
       cg.image.runtime="python" \
       cg.image.runtime.version="3.13" \
-      build_label=${BUILD_LABEL}
-
-ENV HOME=/home/appuser \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PATH="/home/appuser/.local/bin:${PATH}"
-
-RUN apk add --no-cache \
-    python-3.13 \
-    py3.13-pip \
-    py3.13-setuptools \
-    py3.13-wheel \
-    && if ! grep -q '^appgroup:' /etc/group; then addgroup -g 1001 appgroup; fi \
-    && if ! grep -q '^appuser:' /etc/passwd; then adduser -D -u 1001 -G appgroup -h /home/appuser -s /bin/sh appuser; fi \
-    && ln -sf /usr/bin/python3 /usr/bin/python \
-    && ln -sf /usr/bin/pip3 /usr/bin/pip \
-    && mkdir -p /home/appuser/.local /app \
-    && chown -R appuser:appgroup /home/appuser /app
+      cg.image.variant="runtime" \
+      build_label="${BUILD_LABEL}"
 
 WORKDIR /app
-USER appuser
+USER 1001:1001
 
-CMD ["python", "--version"]
+CMD ["/opt/venv/bin/python", "--version"]
