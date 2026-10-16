@@ -9,8 +9,8 @@ This document describes the automated GitHub Actions pipelines powering image te
 | Workflow | File | Triggers | Scope | Key Outputs |
 | :--- | :--- | :--- | :--- | :--- |
 | **PR Validation** | [`.github/workflows/validate.yml`](../.github/workflows/validate.yml) | `pull_request` (targeting `main`), `workflow_dispatch` | `baseOS/**`, `runtimes/**`, `.github/workflows/**`, `.agents/**` | Static checks, local test builds, functional smoke tests, Trivy scan |
-| **BaseOS Release** | [`.github/workflows/baseos-build-publish.yml`](../.github/workflows/baseos-build-publish.yml) | Schedule (`0 10 1 * *`), `workflow_dispatch` | `baseOS/**` | `ghcr.io/cybergavin/<base>` + Docker Hub mirror, Cosign signatures, SBOM/provenance artifacts |
-| **Runtime Release** | [`.github/workflows/runtime-build-publish.yml`](../.github/workflows/runtime-build-publish.yml) | Schedule (`0 10 1 * *`), `workflow_dispatch` | `runtimes/**` | `ghcr.io/cybergavin/<runtime>-<variant>` + Docker Hub mirror, Cosign signatures, SBOM/provenance artifacts |
+| **BaseOS Release** | [`.github/workflows/baseos-build-publish.yml`](../.github/workflows/baseos-build-publish.yml) | Schedule (`0 1 1 * *`), `workflow_dispatch` | `baseOS/**` | `ghcr.io/cybergavin/<base>` + Docker Hub mirror, Cosign signatures, SBOM/provenance artifacts |
+| **Runtime Release** | [`.github/workflows/runtime-build-publish.yml`](../.github/workflows/runtime-build-publish.yml) | Schedule (`30 1 1 * *`), `workflow_dispatch` | `runtimes/**` | `ghcr.io/cybergavin/<runtime>-<variant>` + Docker Hub mirror, Cosign signatures, SBOM/provenance artifacts |
 
 ---
 
