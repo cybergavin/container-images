@@ -257,7 +257,7 @@ jobs:
       # 6) Login, push, generate SBOM & provenance  **only if all previous steps succeeded**
       # -----------------------------------------------------------------------------------------------
       - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6  # v4.7.0
         with:
           registry: ${{ env.DEFAULT_REGISTRY }}
           username: ${{ github.actor }}
@@ -266,7 +266,7 @@ jobs:
       - name: Login to Docker Hub (best effort)
         if: success()
         continue-on-error: true
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6
         with:
           registry: docker.io
           username: ${{ github.actor }}
